@@ -1,0 +1,35 @@
+{
+  "name": "@metatronwings/claude-code-zenmux-status",
+  "version": "0.1.0",
+  "description": "Zenmux usage monitor for Claude Code status bar",
+  "author": "Metatronwings",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Metatronwings/claude-code-zenmux-status.git"
+  },
+  "homepage": "https://github.com/Metatronwings/claude-code-zenmux-status#readme",
+  "keywords": ["claude-code", "zenmux", "status-bar", "claude"],
+  "type": "module",
+  "bin": {
+    "claude-code-zenmux-status": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup && chmod +x dist/index.js",
+    "dev": "tsx src/index.ts",
+    "status": "tsx src/index.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
