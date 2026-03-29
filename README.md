@@ -1,30 +1,32 @@
 # claude-code-zenmux-status
 
-Display your [Zenmux](https://zenmux.ai) subscription usage in the Claude Code status bar.
+[English](README.en.md)
+
+在 Claude Code 状态栏显示 [Zenmux](https://zenmux.ai) 订阅用量。
 
 ```
 ⚡ ultra | 7d 13.8% $27.95/$202.98 ↻4d 5h | 5h 24.8% $6.52/$26.27 ↻43m
 ```
 
-- `7d` — 7-day rolling window: usage %, spent/limit (USD), time until reset
-- `5h` — 5-hour rolling window: usage %, spent/limit (USD), time until reset
-- Abnormal account states are shown inline, e.g. `⚡ ultra [monitored]`
+- `7d` — 7 天滚动窗口：已用比例、已花费/上限（USD）、距重置时间
+- `5h` — 5 小时滚动窗口：已用比例、已花费/上限（USD）、距重置时间
+- 账号状态异常时自动显示标记，如 `⚡ ultra [monitored]`
 
-## Get your API key
+## 凭证获取
 
-1. Go to the [ZenMux Console](https://zenmux.ai/platform/management)
-2. Create a **Management API Key**
-3. Copy the key
+1. 前往 [ZenMux 控制台](https://zenmux.ai/platform/management)
+2. 创建一个 **Management API Key**
+3. 复制 Key 备用
 
-## Installation
+## 安装方式
 
-### Option 1: npm global install
+### 方式一：npm 全局安装
 
 ```bash
 npm install -g @metatronwings/claude-code-zenmux-status
 ```
 
-Add to your `.claude/settings.local.json`:
+在 Claude Code 的 `.claude/settings.local.json` 里配置：
 
 ```json
 {
@@ -35,19 +37,19 @@ Add to your `.claude/settings.local.json`:
 }
 ```
 
-Or export the key in `~/.zshrc` / `~/.bashrc` and use just `claude-code-zenmux-status` as the command.
+也可以在 `~/.zshrc` / `~/.bashrc` 里 `export ZENMUX_MANAGEMENT_API_KEY=...`，command 直接写 `claude-code-zenmux-status`。
 
-### Option 2: Clone and run locally
+### 方式二：本地克隆运行
 
 ```bash
 git clone https://github.com/Metatronwings/claude-code-zenmux-status.git
 cd claude-code-zenmux-status
 npm install
-npm run build      # optional, faster startup
+npm run build      # 可选，构建后启动更快
 echo "ZENMUX_MANAGEMENT_API_KEY=your_key_here" > .env
 ```
 
-Add to your `.claude/settings.local.json`:
+在 `.claude/settings.local.json` 里：
 
 ```json
 {
@@ -58,30 +60,34 @@ Add to your `.claude/settings.local.json`:
 }
 ```
 
-`status.sh` loads `.env` automatically and prefers the compiled `dist/index.js`, falling back to `tsx` if not built.
+`status.sh` 自动加载 `.env`，优先用编译后的 `dist/index.js`，否则回退到 `tsx`。
 
-## Environment variables
+## 环境变量
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `ZENMUX_MANAGEMENT_API_KEY` | Yes | Management API Key |
-| `ZENMUX_CACHE_TTL` | No | Cache TTL in seconds, default `60` |
+| 变量 | 必填 | 说明 |
+|------|------|------|
+| `ZENMUX_MANAGEMENT_API_KEY` | ✅ | Management API Key |
+| `ZENMUX_CACHE_TTL` | 否 | 缓存秒数，默认 `60` |
 
-## Caching
+## 缓存
 
-The Claude Code status bar refreshes after every AI response, which can mean multiple executions per minute during active sessions. To avoid hitting API rate limits, the tool uses file-based caching:
+Claude Code 状态栏在每次 AI 回复后触发刷新，频繁对话时每分钟可能执行多次。为避免触达 API 限流，工具内置文件缓存：
 
-- Default TTL: **60 seconds**, cache hits respond in < 30ms
-- Cache file: `/tmp/czs-<key_hash>.cache` (first 16 chars of the key's SHA-256, no plaintext)
-- Read/write failures are silently ignored with automatic fallback to live requests
+- 默认 TTL **60 秒**，缓存命中时响应 < 30ms
+- 缓存文件：`/tmp/czs-<key_hash>.cache`（key 的 sha256 前 16 位，不含明文）
+- 缓存读写失败时静默忽略，自动回退到实时请求
 
-## Time calculation
+## 时间计算
 
-All countdowns use the `Date` header from the API response as the current time reference, not the local system clock. This ensures correct display across any timezone or clock skew environment.
+所有倒计时以 API 响应的 `Date` 头作为当前时间基准，不依赖本地系统时钟，在任何时区和时钟偏差环境下均能正确显示。
 
-## Local testing
+## 发布
+
+在 GitHub 上创建 Release，GitHub Actions 会自动构建并发布到 npm。
+
+## 手动测试
 
 ```bash
-npm run status          # dev mode (tsx, no build needed)
-node dist/index.js      # test the build output (requires npm run build first)
+npm run status          # 开发模式（tsx，无需先 build）
+node dist/index.js      # 测试构建产物（需先 npm run build）
 ```
