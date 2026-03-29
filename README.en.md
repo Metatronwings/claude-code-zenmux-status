@@ -81,9 +81,3 @@ The Claude Code status bar refreshes after every AI response, which can mean mul
 
 All countdowns use the `Date` header from the API response as the current time reference, not the local system clock. This ensures correct display across any timezone or clock skew environment.
 
-## Local testing
-
-```bash
-npm run status          # dev mode (tsx, no build needed)
-node dist/index.js      # test the build output (requires npm run build first)
-```
