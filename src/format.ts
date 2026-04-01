@@ -46,10 +46,10 @@ export function formatStatus(detail: SubscriptionDetail, serverNowMs: number, us
   if (useBar) {
     // Tier emoji + 5h gradient (no label) + optional 7d
     const parts: string[] = [
-      `${emoji} ${renderGradientBar(quota_5_hour.usage_percentage)} ${pct(quota_5_hour.usage_percentage)}`,
+      `${emoji} ${renderGradientBar(quota_5_hour.usage_percentage)} ${pct(quota_5_hour.usage_percentage)} ${resetStr(quota_5_hour, serverNowMs)}`.trimEnd(),
     ];
     if (quota_7_day.usage_percentage > 0.70) {
-      parts.push(`7d ${renderGradientBar(quota_7_day.usage_percentage)} ${pct(quota_7_day.usage_percentage)}`);
+      parts.push(`7d ${renderGradientBar(quota_7_day.usage_percentage)} ${pct(quota_7_day.usage_percentage)} ${resetStr(quota_7_day, serverNowMs)}`.trimEnd());
     }
     if (badge) parts.unshift(badge.trim());
     return parts.join(" | ");
@@ -64,6 +64,12 @@ export function formatStatus(detail: SubscriptionDetail, serverNowMs: number, us
     parts.push(formatWindow("7d", quota_7_day, serverNowMs));
   }
   return parts.join(" | ");
+}
+
+function resetStr(q: QuotaWindow, nowMs: number): string {
+  if (q.resets_at === null) return "(inactive)";
+  const left = timeUntil(parseUTC(q.resets_at), nowMs);
+  return left !== null ? `↻${left}` : "↻?";
 }
 
 function formatWindow(label: string, q: QuotaWindow, nowMs: number): string {
