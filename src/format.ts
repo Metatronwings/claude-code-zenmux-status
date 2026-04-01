@@ -7,18 +7,62 @@ const STATUS_BADGE: Record<string, string> = {
   banned:    " [banned]",
 };
 
-export function formatStatus(detail: SubscriptionDetail, serverNowMs: number): string {
+const TIER_EMOJI: Record<string, string> = {
+  ultra: "💎",
+  max:   "🔥",
+  pro:   "⭐",
+  free:  "🌱",
+};
+
+const BAR_WIDTH = 10;
+
+function renderGradientBar(rate: number): string {
+  const pos = rate * BAR_WIDTH;
+  const full = Math.floor(pos);
+  const frac = pos - full;
+
+  let bar = "█".repeat(full);
+  if (full < BAR_WIDTH) {
+    if (frac >= 0.75)      bar += "▓";
+    else if (frac >= 0.50) bar += "▒";
+    else if (frac >= 0.25) bar += "░";
+    bar = bar.padEnd(BAR_WIDTH, "░");
+  }
+
+  const color = rate > 0.80 ? "\x1b[31m" : rate > 0.50 ? "\x1b[33m" : "\x1b[32m";
+  return color + bar + "\x1b[0m";
+}
+
+/**
+ * Bar mode:   returns "<tierEmoji> <gradBar> <pct>% [| 7d <gradBar> <pct>%]"
+ *             — model name and token counts are prepended/appended by index.ts
+ * Non-bar mode: returns "<tierEmoji> <tier> | 5h <pct>% $x/$y ↻t [| 7d ...]"
+ */
+export function formatStatus(detail: SubscriptionDetail, serverNowMs: number, useBar: boolean): string {
   const { plan, account_status, quota_7_day, quota_5_hour } = detail;
-
   const badge = STATUS_BADGE[account_status] ?? "";
-  const tier = `⚡ ${plan.tier}${badge}`;
+  const emoji = TIER_EMOJI[plan.tier] ?? "⚡";
 
-  const parts = [
-    tier,
-    formatWindow("7d", quota_7_day, serverNowMs),
+  if (useBar) {
+    // Tier emoji + 5h gradient (no label) + optional 7d
+    const parts: string[] = [
+      `${emoji} ${renderGradientBar(quota_5_hour.usage_percentage)} ${pct(quota_5_hour.usage_percentage)}`,
+    ];
+    if (quota_7_day.usage_percentage > 0.70) {
+      parts.push(`7d ${renderGradientBar(quota_7_day.usage_percentage)} ${pct(quota_7_day.usage_percentage)}`);
+    }
+    if (badge) parts.unshift(badge.trim());
+    return parts.join(" | ");
+  }
+
+  // Non-bar mode: full detail with dollar amounts and countdowns
+  const parts: string[] = [
+    `${emoji} ${plan.tier}${badge}`,
     formatWindow("5h", quota_5_hour, serverNowMs),
   ];
-
+  if (quota_7_day.usage_percentage > 0.70) {
+    parts.push(formatWindow("7d", quota_7_day, serverNowMs));
+  }
   return parts.join(" | ");
 }
 
@@ -39,17 +83,11 @@ function pct(rate: number): string {
   return `${(rate * 100).toFixed(1)}%`;
 }
 
-/**
- * Parse an ISO 8601 string as UTC milliseconds.
- * Appends 'Z' if the string has no timezone indicator to prevent
- * local-time misinterpretation across different system timezones.
- */
 function parseUTC(iso: string): number {
   const hasOffset = iso.endsWith("Z") || /[+-]\d\d:\d\d$/.test(iso);
   return new Date(hasOffset ? iso : iso + "Z").getTime();
 }
 
-/** Time until a future UTC epoch. Uses serverNowMs to avoid local clock skew. */
 function timeUntil(epochMs: number, nowMs: number): string | null {
   const ms = epochMs - nowMs;
   if (ms <= 0) return null;
