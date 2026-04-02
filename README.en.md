@@ -20,8 +20,8 @@ Display your [Zenmux](https://zenmux.ai) subscription usage, session token stats
 
 - Tier emoji: 💎 Ultra / 🔥 Max / ⭐ Pro / 🌱 Free
 - `5h` — 5-hour rolling window
-- `7d` — 7-day rolling window (**only shown when usage exceeds 70%**)
-- Progress bar mode also shows: current model `[Sonnet 4.6]` and session token totals `↑input ↓output`
+- `7d` — 7-day rolling window (always shown by default; set `ZENMUX_HIDE_7D_BELOW_70=1` to hide when below 70%)
+- Progress bar mode also shows: current model `[Sonnet 4.6]` and session token delta `↑input ↓output` (resets to 0 each time you open CC)
 - Abnormal account states are shown inline, e.g. `[monitored]`
 
 ### Line 2 — Workspace status
@@ -93,6 +93,7 @@ Add to your `.claude/settings.local.json`:
 |----------|----------|-------------|
 | `ZENMUX_MANAGEMENT_API_KEY` | Yes | Management API Key |
 | `ZENMUX_PROGRESS_BAR` | No | Set to `1` to enable progress bar mode |
+| `ZENMUX_HIDE_7D_BELOW_70` | No | Set to `1` to hide the 7d window when usage is below 70% |
 | `ZENMUX_CACHE_TTL` | No | Cache TTL in seconds, default `60` |
 
 ## Caching

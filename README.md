@@ -20,8 +20,8 @@
 
 - 档位 emoji：💎 Ultra / 🔥 Max / ⭐ Pro / 🌱 Free
 - `5h` — 5 小时滚动窗口
-- `7d` — 7 天滚动窗口（**仅在用量超过 70% 时显示**）
-- 进度条模式下额外显示：当前模型名 `[Sonnet 4.6]`、会话累计 token `↑input ↓output`
+- `7d` — 7 天滚动窗口（默认始终显示；设置 `ZENMUX_HIDE_7D_BELOW_70=1` 可在用量低于 70% 时隐藏）
+- 进度条模式下额外显示：当前模型名 `[Sonnet 4.6]`、本次会话 token 增量 `↑input ↓output`（每次新开 CC 从 0 开始计）
 - 账号状态异常时自动附加标记，如 `[monitored]`
 
 ### 第二行 — 工作区状态
@@ -93,6 +93,7 @@ npm install
 |------|------|------|
 | `ZENMUX_MANAGEMENT_API_KEY` | ✅ | Management API Key |
 | `ZENMUX_PROGRESS_BAR` | 否 | 设为 `1` 启用进度条模式 |
+| `ZENMUX_HIDE_7D_BELOW_70` | 否 | 设为 `1` 时，7d 用量低于 70% 时隐藏 |
 | `ZENMUX_CACHE_TTL` | 否 | 缓存秒数，默认 `60` |
 
 ## 缓存
