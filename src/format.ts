@@ -38,17 +38,17 @@ function renderGradientBar(rate: number): string {
  *             — model name and token counts are prepended/appended by index.ts
  * Non-bar mode: returns "<tierEmoji> <tier> | 5h <pct>% $x/$y ↻t [| 7d ...]"
  */
-export function formatStatus(detail: SubscriptionDetail, serverNowMs: number, useBar: boolean): string {
+export function formatStatus(detail: SubscriptionDetail, serverNowMs: number, useBar: boolean, hide7dBelow70 = false): string {
   const { plan, account_status, quota_7_day, quota_5_hour } = detail;
   const badge = STATUS_BADGE[account_status] ?? "";
   const emoji = TIER_EMOJI[plan.tier] ?? "⚡";
+  const show7d = !hide7dBelow70 || quota_7_day.usage_percentage > 0.70;
 
   if (useBar) {
-    // Tier emoji + 5h gradient (no label) + optional 7d
     const parts: string[] = [
       `${emoji} ${renderGradientBar(quota_5_hour.usage_percentage)} ${pct(quota_5_hour.usage_percentage)} ${resetStr(quota_5_hour, serverNowMs)}`.trimEnd(),
     ];
-    if (quota_7_day.usage_percentage > 0.70) {
+    if (show7d) {
       parts.push(`7d ${renderGradientBar(quota_7_day.usage_percentage)} ${pct(quota_7_day.usage_percentage)} ${resetStr(quota_7_day, serverNowMs)}`.trimEnd());
     }
     if (badge) parts.unshift(badge.trim());
@@ -60,7 +60,7 @@ export function formatStatus(detail: SubscriptionDetail, serverNowMs: number, us
     `${emoji} ${plan.tier}${badge}`,
     formatWindow("5h", quota_5_hour, serverNowMs),
   ];
-  if (quota_7_day.usage_percentage > 0.70) {
+  if (show7d) {
     parts.push(formatWindow("7d", quota_7_day, serverNowMs));
   }
   return parts.join(" | ");

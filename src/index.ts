@@ -68,6 +68,7 @@ if (!apiKey) {
 
 const ttlMs = Number(process.env.ZENMUX_CACHE_TTL ?? 60) * 1000;
 const useBar = process.env.ZENMUX_PROGRESS_BAR === "1";
+const hide7dBelow70 = process.env.ZENMUX_HIDE_7D_BELOW_70 === "1";
 
 // Session stats and git line are always fresh — never cached
 const cwd = process.cwd();
@@ -87,7 +88,7 @@ if (cached !== null) {
 
 try {
   const { detail, serverNowMs } = await fetchDetail(apiKey);
-  const out = formatStatus(detail, serverNowMs, useBar);
+  const out = formatStatus(detail, serverNowMs, useBar, hide7dBelow70);
   writeCache(cacheKey, out);
   process.stdout.write(modelPrefix + out + tokenSuffix + "\n" + gitLine + "\n");
 } catch (err) {

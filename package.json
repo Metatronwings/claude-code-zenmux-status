@@ -1,6 +1,6 @@
 {
   "name": "@metatronwings/claude-code-zenmux-status",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Zenmux usage monitor for Claude Code status bar",
   "author": "Metatronwings",
   "license": "MIT",
@@ -9,7 +9,12 @@
     "url": "https://github.com/Metatronwings/claude-code-zenmux-status.git"
   },
   "homepage": "https://github.com/Metatronwings/claude-code-zenmux-status#readme",
-  "keywords": ["claude-code", "zenmux", "status-bar", "claude"],
+  "keywords": [
+    "claude-code",
+    "zenmux",
+    "status-bar",
+    "claude"
+  ],
   "type": "module",
   "bin": {
     "claude-code-zenmux-status": "dist/index.js"

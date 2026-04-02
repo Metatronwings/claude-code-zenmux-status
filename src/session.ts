@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { getBaseline } from "./baseline.js";
 
 export interface SessionStats {
   model: string | null;
@@ -47,7 +48,12 @@ export function getSessionStats(cwd: string): SessionStats {
       } catch { /* skip malformed lines */ }
     }
 
-    return { model, inputTokens, outputTokens };
+    const baseline = getBaseline(sessionFile.path, { input: inputTokens, output: outputTokens });
+    return {
+      model,
+      inputTokens: Math.max(0, inputTokens - baseline.input),
+      outputTokens: Math.max(0, outputTokens - baseline.output),
+    };
   } catch {
     return { model: null, inputTokens: 0, outputTokens: 0 };
   }
