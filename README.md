@@ -38,7 +38,54 @@
 
 ## 安装方式
 
-### 方式一：npm 全局安装
+### 方式一：Shell 脚本（免 Node.js，推荐）
+
+如果你不想安装 Node.js，可以直接使用仓库自带的 `zenmux-status.sh`：
+
+**依赖：** `bash`、`curl`、`jq`
+
+**一键安装（推荐）：**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Metatronwings/claude-code-zenmux-status/main/install.sh | bash
+```
+
+安装脚本会交互式提示你输入 API Key，自动下载脚本、配置 shell 环境变量，并检测当前目录的 `.claude/settings.local.json` 进行自动配置。
+
+**手动安装：**
+
+```bash
+# 1. 下载脚本
+curl -fsSL -o ~/.local/bin/zenmux-status.sh \
+  https://raw.githubusercontent.com/Metatronwings/claude-code-zenmux-status/main/zenmux-status.sh
+chmod +x ~/.local/bin/zenmux-status.sh
+
+# 2. 设置 API Key
+export ZENMUX_MANAGEMENT_API_KEY="your_key_here"
+
+# 3. 在 .claude/settings.local.json 里配置
+{
+  "statusLine": {
+    "type": "command",
+    "command": "~/.local/bin/zenmux-status.sh"
+  }
+}
+```
+
+开启进度条模式：
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "ZENMUX_PROGRESS_BAR=1 ~/.local/bin/zenmux-status.sh"
+  }
+}
+```
+
+Shell 脚本版本支持进度条模式（`ZENMUX_PROGRESS_BAR=1`）和模型名显示，但不支持会话 Token 统计。
+
+### 方式二：npm 全局安装
 
 ```bash
 npm install -g @metatronwings/claude-code-zenmux-status
@@ -68,7 +115,7 @@ npm install -g @metatronwings/claude-code-zenmux-status
 
 也可以在 `~/.zshrc` / `~/.bashrc` 里 `export ZENMUX_MANAGEMENT_API_KEY=...`，command 直接写 `claude-code-zenmux-status`。
 
-### 方式二：本地克隆运行
+### 方式三：本地克隆运行
 
 ```bash
 git clone https://github.com/Metatronwings/claude-code-zenmux-status.git
