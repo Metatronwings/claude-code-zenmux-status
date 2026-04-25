@@ -79,7 +79,7 @@ if (session?.model) {
   if (session.contextPct != null) {
     const pct = session.contextPct;
     const color = pct > 0.80 ? "\x1b[31m" : pct > 0.50 ? "\x1b[33m" : "\x1b[32m";
-    ctx = ` ${color}${Math.round(pct * 100)}%\x1b[0m`;
+    ctx = ` ${color}${(pct * 100).toFixed(1)}%\x1b[0m`;
   }
   modelPrefix = `[${formatModelName(session.model)}${ctx}] `;
 }

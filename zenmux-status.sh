@@ -192,11 +192,11 @@ get_model_name() {
   local input_tokens ctx=""
   input_tokens=$(jq -r 'select(.type == "assistant" and .message.usage.input_tokens != null) | .message.usage | ((.input_tokens // 0) + (.cache_creation_input_tokens // 0) + (.cache_read_input_tokens // 0))' "$latest" 2>/dev/null | tail -1)
   if [[ -n "$input_tokens" && "$input_tokens" != "null" && "$input_tokens" != "0" && "$input_tokens" -gt 0 ]]; then
-    local pct=$(( input_tokens * 100 / 1000000 ))
-    if [[ $pct -gt 100 ]]; then pct=100; fi
+    local pct
+    pct=$(awk "BEGIN {printf \"%.1f\", $input_tokens * 100 / 1000000}")
     local color
-    if [[ $pct -gt 80 ]]; then color='\x1b[31m'
-    elif [[ $pct -gt 50 ]]; then color='\x1b[33m'
+    if awk "BEGIN {exit !($pct > 80)}"; then color='\x1b[31m'
+    elif awk "BEGIN {exit !($pct > 50)}"; then color='\x1b[33m'
     else color='\x1b[32m'; fi
     ctx=" ${color}${pct}%\x1b[0m"
   fi
