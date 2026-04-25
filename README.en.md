@@ -12,7 +12,7 @@ Display your [Zenmux](https://zenmux.ai) subscription usage, session token stats
 
 **Progress bar mode (`ZENMUX_PROGRESS_BAR=1`):**
 ```
-[Sonnet 4.6] 💎 ▓░░░░░░░░░ 8.1% | 7d ████████░░ 81.3% | ↑9.0M ↓56k
+[Sonnet 4.6 12.3%] 💎 ▓░░░░░░░░░ 8.1% | 7d ████████░░ 81.3% | ↑9.0M ↓56k
 📁~/project 🌿(main) ✗ ~3 ?1
 ```
 
@@ -21,7 +21,7 @@ Display your [Zenmux](https://zenmux.ai) subscription usage, session token stats
 - Tier emoji: 💎 Ultra / 🔥 Max / ⭐ Pro / 🌱 Free
 - `5h` — 5-hour rolling window
 - `7d` — 7-day rolling window (always shown by default; set `ZENMUX_HIDE_7D_BELOW_70=1` to hide when below 70%)
-- Progress bar mode also shows: current model `[Sonnet 4.6]` and session token delta `↑input ↓output` (resets to 0 each time you open CC)
+- Progress bar mode also shows: current model `[Sonnet 4.6 12.3%]` with context window percentage (red >80%, yellow >50%, green ≤50%, 1 decimal), and session token delta `↑input ↓output` (resets to 0 each time you open CC)
 - Abnormal account states are shown inline, e.g. `[monitored]`
 
 ### Line 2 — Workspace status
@@ -38,7 +38,54 @@ Display your [Zenmux](https://zenmux.ai) subscription usage, session token stats
 
 ## Installation
 
-### Option 1: npm global install
+### Option 1: Shell script (no Node.js required, recommended)
+
+If you don't want to install Node.js, you can use the bundled `zenmux-status.sh` script:
+
+**Dependencies:** `bash`, `curl`, `jq`
+
+**One-liner install (recommended):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Metatronwings/claude-code-zenmux-status/main/install.sh | bash
+```
+
+The installer interactively prompts for your API Key, downloads the script, configures your shell environment, and auto-detects `.claude/settings.local.json` for setup.
+
+**Manual install:**
+
+```bash
+# 1. Download the script
+curl -fsSL -o ~/.local/bin/zenmux-status.sh \
+  https://raw.githubusercontent.com/Metatronwings/claude-code-zenmux-status/main/zenmux-status.sh
+chmod +x ~/.local/bin/zenmux-status.sh
+
+# 2. Set your API key
+export ZENMUX_MANAGEMENT_API_KEY="your_key_here"
+
+# 3. Configure in .claude/settings.local.json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "~/.local/bin/zenmux-status.sh"
+  }
+}
+```
+
+To enable progress bar mode:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "ZENMUX_PROGRESS_BAR=1 ~/.local/bin/zenmux-status.sh"
+  }
+}
+```
+
+The shell script version supports progress bar mode (`ZENMUX_PROGRESS_BAR=1`) and model name display, but not session token statistics.
+
+### Option 2: npm global install
 
 ```bash
 npm install -g @metatronwings/claude-code-zenmux-status
@@ -68,7 +115,7 @@ To enable progress bar mode:
 
 Or export the key in `~/.zshrc` / `~/.bashrc` and use just `claude-code-zenmux-status` as the command.
 
-### Option 2: Clone and run locally
+### Option 3: Clone and run locally
 
 ```bash
 git clone https://github.com/Metatronwings/claude-code-zenmux-status.git
