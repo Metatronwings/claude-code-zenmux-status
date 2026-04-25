@@ -188,10 +188,10 @@ get_model_name() {
   fi
   local name
   name=$(format_model_name "$model")
-  # Context percentage from last assistant message's input_tokens
+  # Context percentage: last assistant's total context tokens (input + cache reads)
   local input_tokens ctx=""
-  input_tokens=$(jq -r 'select(.type == "assistant" and .message.usage.input_tokens != null) | .message.usage.input_tokens' "$latest" 2>/dev/null | tail -1)
-  if [[ -n "$input_tokens" && "$input_tokens" != "null" && "$input_tokens" -gt 0 ]]; then
+  input_tokens=$(jq -r 'select(.type == "assistant" and .message.usage.input_tokens != null) | .message.usage | ((.input_tokens // 0) + (.cache_creation_input_tokens // 0) + (.cache_read_input_tokens // 0))' "$latest" 2>/dev/null | tail -1)
+  if [[ -n "$input_tokens" && "$input_tokens" != "null" && "$input_tokens" != "0" && "$input_tokens" -gt 0 ]]; then
     local pct=$(( input_tokens * 100 / 1000000 ))
     if [[ $pct -gt 100 ]]; then pct=100; fi
     local color

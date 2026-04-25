@@ -34,7 +34,7 @@ export function getSessionStats(cwd: string): SessionStats {
 
     const lines = readFileSync(sessionFile.path, "utf8").split("\n");
     let inputTokens = 0, outputTokens = 0, model: string | null = null;
-    let lastInputTokens: number | null = null;
+    let lastContextTokens: number | null = null;
 
     for (const line of lines) {
       if (!line) continue;
@@ -45,13 +45,13 @@ export function getSessionStats(cwd: string): SessionStats {
           inputTokens += (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
           outputTokens += u.output_tokens ?? 0;
           if (entry.message.model) model = entry.message.model;
-          if (u.input_tokens != null) lastInputTokens = u.input_tokens;
+          lastContextTokens = (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
         }
       } catch { /* skip malformed lines */ }
     }
 
     const baseline = getBaseline(sessionFile.path, { input: inputTokens, output: outputTokens });
-    const contextPct = lastInputTokens != null ? Math.min(1, lastInputTokens / 1_000_000) : null;
+    const contextPct = lastContextTokens != null ? Math.min(1, lastContextTokens / 1_000_000) : null;
     return {
       model,
       inputTokens: Math.max(0, inputTokens - baseline.input),
