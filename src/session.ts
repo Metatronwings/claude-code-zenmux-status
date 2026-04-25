@@ -7,6 +7,7 @@ export interface SessionStats {
   model: string | null;
   inputTokens: number;
   outputTokens: number;
+  contextPct: number | null;
 }
 
 export function formatModelName(raw: string): string {
@@ -29,10 +30,11 @@ export function getSessionStats(cwd: string): SessionStats {
       .map(f => ({ path: join(projectDir, f), mtime: statSync(join(projectDir, f)).mtimeMs }))
       .sort((a, b) => b.mtime - a.mtime)[0];
 
-    if (!sessionFile) return { model: null, inputTokens: 0, outputTokens: 0 };
+    if (!sessionFile) return { model: null, inputTokens: 0, outputTokens: 0, contextPct: null };
 
     const lines = readFileSync(sessionFile.path, "utf8").split("\n");
     let inputTokens = 0, outputTokens = 0, model: string | null = null;
+    let lastInputTokens: number | null = null;
 
     for (const line of lines) {
       if (!line) continue;
@@ -40,21 +42,23 @@ export function getSessionStats(cwd: string): SessionStats {
         const entry = JSON.parse(line);
         if (entry.type === "assistant" && entry.message?.usage) {
           const u = entry.message.usage;
-          // Count all input: direct + cache creation + cache reads
           inputTokens += (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
           outputTokens += u.output_tokens ?? 0;
           if (entry.message.model) model = entry.message.model;
+          if (u.input_tokens != null) lastInputTokens = u.input_tokens;
         }
       } catch { /* skip malformed lines */ }
     }
 
     const baseline = getBaseline(sessionFile.path, { input: inputTokens, output: outputTokens });
+    const contextPct = lastInputTokens != null ? Math.min(1, lastInputTokens / 1_000_000) : null;
     return {
       model,
       inputTokens: Math.max(0, inputTokens - baseline.input),
       outputTokens: Math.max(0, outputTokens - baseline.output),
+      contextPct,
     };
   } catch {
-    return { model: null, inputTokens: 0, outputTokens: 0 };
+    return { model: null, inputTokens: 0, outputTokens: 0, contextPct: null };
   }
 }
