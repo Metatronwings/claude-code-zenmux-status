@@ -176,9 +176,24 @@ get_model_name() {
   fi
   local model
   model=$(jq -r 'select(.type == "assistant" and .message.model != null) | .message.model' "$latest" 2>/dev/null | tail -1)
-  if [[ -n "$model" && "$model" != "null" ]]; then
-    format_model_name "$model"
+  if [[ -z "$model" || "$model" == "null" ]]; then
+    return
   fi
+  local prefix
+  prefix=$(format_model_name "$model")
+  # Context percentage from last assistant message's input_tokens
+  local input_tokens
+  input_tokens=$(jq -r 'select(.type == "assistant" and .message.usage.input_tokens != null) | .message.usage.input_tokens' "$latest" 2>/dev/null | tail -1)
+  if [[ -n "$input_tokens" && "$input_tokens" != "null" && "$input_tokens" -gt 0 ]]; then
+    local pct=$(( input_tokens * 100 / 1000000 ))
+    if [[ $pct -gt 100 ]]; then pct=100; fi
+    local color
+    if [[ $pct -gt 80 ]]; then color='\x1b[31m'
+    elif [[ $pct -gt 50 ]]; then color='\x1b[33m'
+    else color='\x1b[32m'; fi
+    prefix="${prefix} ${color}${pct}%\x1b[0m"
+  fi
+  echo "${prefix}"
 }
 
 C5H=$(color_pct "$PCT5H")
