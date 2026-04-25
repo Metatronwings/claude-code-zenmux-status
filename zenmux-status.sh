@@ -138,15 +138,22 @@ fmt_reset() {
 
 render_bar() {
   local rate=$1
-  local pos=$(awk "BEGIN {printf \"%f\", $rate * 10}")
-  local full=${pos%.*}
-  local frac=$(awk "BEGIN {printf \"%f\", $pos - $full}")
+  local pos full frac
+  pos=$(awk "BEGIN {printf \"%f\", $rate * 10}")
+  full=${pos%.*}
+  frac=$(awk "BEGIN {printf \"%f\", $pos - $full}")
   local partial=""
   if awk "BEGIN {exit !($frac >= 0.75)}"; then partial="▓"
   elif awk "BEGIN {exit !($frac >= 0.50)}"; then partial="▒"
   elif awk "BEGIN {exit !($frac >= 0.25)}"; then partial="░"
   fi
-  printf "%s%s%s" "$(printf '%*s' "$full" '' | tr ' ' '█')" "$partial" "$(printf '%*s' $((10 - full - ${#partial})) '' | tr ' ' '░')"
+  local filled=""
+  local i
+  for ((i=0; i<full; i++)); do filled+="█"; done
+  local remain=$((10 - full - ${#partial}))
+  local empty=""
+  for ((i=0; i<remain; i++)); do empty+="░"; done
+  echo -n "${filled}${partial}${empty}"
 }
 
 format_model_name() {
