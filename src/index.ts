@@ -73,7 +73,16 @@ const hide7dBelow70 = process.env.ZENMUX_HIDE_7D_BELOW_70 === "1";
 // Session stats and git line are always fresh — never cached
 const cwd = process.cwd();
 const session = useBar ? getSessionStats(cwd) : null;
-const modelPrefix = session?.model ? `[${formatModelName(session.model)}] ` : "";
+let modelPrefix = "";
+if (session?.model) {
+  let ctx = "";
+  if (session.contextPct != null) {
+    const pct = session.contextPct;
+    const color = pct > 0.80 ? "\x1b[31m" : pct > 0.50 ? "\x1b[33m" : "\x1b[32m";
+    ctx = ` ${color}${Math.round(pct * 100)}%\x1b[0m`;
+  }
+  modelPrefix = `[${formatModelName(session.model)}${ctx}] `;
+}
 const tokenSuffix = session ? ` | ↑${fmtK(session.inputTokens)} ↓${fmtK(session.outputTokens)}` : "";
 const gitLine = buildGitLine();
 
