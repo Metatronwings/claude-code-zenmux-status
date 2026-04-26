@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { getBaseline } from "./baseline.js";
+import { loadBaseline, saveBaseline } from "./baseline.js";
 
 export interface SessionStats {
   model: string | null;
@@ -13,7 +13,6 @@ export interface SessionStats {
 
 export function formatModelName(raw: string): string {
   const name = (raw.split("/").pop() ?? raw).replace(/^claude-/, "");
-  // "sonnet-4.6" → "Sonnet 4.6"  "opus-4-6" → "Opus 4.6"  "haiku-4-5-20251001" → "Haiku 4.5"
   const match = name.match(/^(\w+)-(\d+)[.-](\d+)/);
   if (!match) return name;
   const [, family, major, minor] = match;
@@ -25,7 +24,6 @@ export function getSessionStats(cwd: string): SessionStats {
     const projectKey = cwd.replace(/\//g, "-");
     const projectDir = join(homedir(), ".claude", "projects", projectKey);
 
-    // Most recently modified top-level .jsonl = current session
     const sessionFile = readdirSync(projectDir)
       .filter(f => f.endsWith(".jsonl"))
       .map(f => ({ path: join(projectDir, f), mtime: statSync(join(projectDir, f)).mtimeMs }))
@@ -33,15 +31,22 @@ export function getSessionStats(cwd: string): SessionStats {
 
     if (!sessionFile) return { model: null, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, contextPct: null };
 
-    const lines = readFileSync(sessionFile.path, "utf8").split("\n");
-    let inputTokens = 0, cacheReadTokens = 0, outputTokens = 0, model: string | null = null;
-    let lastContextTokens: number | null = null;
-    const seenIds = new Set<string>();
+    const lines = readFileSync(sessionFile.path, "utf8").trimEnd().split("\n");
+    const stored = loadBaseline(sessionFile.path);
+    const hasBaseline = stored != null && typeof stored.lineCount === "number" && stored.lineCount >= 0;
 
-    for (const line of lines) {
-      if (!line) continue;
+    let inputTokens = stored?.input ?? 0;
+    let cacheReadTokens = stored?.cacheRead ?? 0;
+    let outputTokens = stored?.output ?? 0;
+    let model = stored?.model ?? null;
+    let lastContextTokens = stored?.lastContextTokens ?? null;
+    const startLine = hasBaseline ? stored!.lineCount : 0;
+
+    const seenIds = new Set<string>();
+    for (let i = startLine; i < lines.length; i++) {
+      if (!lines[i]) continue;
       try {
-        const entry = JSON.parse(line);
+        const entry = JSON.parse(lines[i]);
         if (entry.type === "assistant" && entry.message?.usage) {
           const msgId = entry.message.id;
           if (!msgId || seenIds.has(msgId)) continue;
@@ -59,13 +64,29 @@ export function getSessionStats(cwd: string): SessionStats {
       } catch { /* skip malformed lines */ }
     }
 
-    const baseline = getBaseline(sessionFile.path, { input: inputTokens, cacheRead: cacheReadTokens, output: outputTokens });
+    // Session-start totals: set once, used for cumulative delta display
+    const sessInput = hasBaseline ? (stored.sessionInput ?? stored.input) : inputTokens;
+    const sessCache = hasBaseline ? (stored.sessionCacheRead ?? stored.cacheRead) : cacheReadTokens;
+    const sessOutput = hasBaseline ? (stored.sessionOutput ?? stored.output) : outputTokens;
+
+    saveBaseline(sessionFile.path, {
+      input: inputTokens,
+      cacheRead: cacheReadTokens,
+      output: outputTokens,
+      sessionInput: sessInput,
+      sessionCacheRead: sessCache,
+      sessionOutput: sessOutput,
+      model,
+      lastContextTokens,
+      lineCount: lines.length,
+    });
+
     const contextPct = lastContextTokens != null ? Math.min(1, lastContextTokens / 1_000_000) : null;
     return {
       model,
-      inputTokens: Math.max(0, inputTokens - baseline.input),
-      cacheReadTokens: Math.max(0, cacheReadTokens - baseline.cacheRead),
-      outputTokens: Math.max(0, outputTokens - baseline.output),
+      inputTokens: Math.max(0, inputTokens - sessInput),
+      cacheReadTokens: Math.max(0, cacheReadTokens - sessCache),
+      outputTokens: Math.max(0, outputTokens - sessOutput),
       contextPct,
     };
   } catch {

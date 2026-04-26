@@ -226,65 +226,100 @@ get_token_stats() {
     return
   fi
 
-  local counts
-  counts=$(jq -s '
-    [.[] | select(.type == "assistant" and .message.usage and .message.id)]
-    | group_by(.message.id)
-    | map(.[0].message.usage)
-    | {
-        input: (map(.input_tokens // 0) | add),
-        cacheRead: (map(.cache_read_input_tokens // 0) | add),
-        output: (map(.output_tokens // 0) | add)
-      }
-  ' "$latest" 2>/dev/null)
-
-  if [[ -z "$counts" || "$counts" == "null" ]]; then
-    return
-  fi
-
-  local cur_input cur_cache cur_output
-  cur_input=$(echo "$counts" | jq -r '.input // 0')
-  cur_cache=$(echo "$counts" | jq -r '.cacheRead // 0')
-  cur_output=$(echo "$counts" | jq -r '.output // 0')
+  local total_lines
+  total_lines=$(wc -l < "$latest" 2>/dev/null || echo 0)
 
   local BASELINE_FILE="/tmp/czs-baselines.json"
-  local delta_input delta_cache delta_output
+
+  # Clean stale entries (session files that no longer exist)
+  if [[ -f "$BASELINE_FILE" ]]; then
+    local stale_list="" key
+    while IFS= read -r key; do
+      [[ -z "$key" ]] && continue
+      if [[ ! -f "$key" ]]; then
+        stale_list="${stale_list}[\"$key\"],"
+      fi
+    done < <(jq -r 'keys[]' "$BASELINE_FILE" 2>/dev/null)
+    if [[ -n "$stale_list" ]]; then
+      jq "del(${stale_list%,})" "$BASELINE_FILE" > "${BASELINE_FILE}.tmp" 2>/dev/null && \
+        mv "${BASELINE_FILE}.tmp" "$BASELINE_FILE"
+    fi
+  fi
+
+  local stored_input=0 stored_cache=0 stored_output=0 stored_line=0
+  local sess_input=0 sess_cache=0 sess_output=0
+  local has_baseline=false
 
   if [[ -f "$BASELINE_FILE" ]]; then
-    local base_input base_cache base_output
-    base_input=$(jq -r ".[\"$latest\"].input // empty" "$BASELINE_FILE" 2>/dev/null)
-    base_cache=$(jq -r ".[\"$latest\"].cacheRead // empty" "$BASELINE_FILE" 2>/dev/null)
-    base_output=$(jq -r ".[\"$latest\"].output // empty" "$BASELINE_FILE" 2>/dev/null)
-    if [[ -n "$base_input" ]]; then
-      delta_input=$((cur_input - base_input))
-      delta_cache=$((cur_cache - base_cache))
-      delta_output=$((cur_output - base_output))
-      [[ $delta_input -lt 0 ]] && delta_input=0
-      [[ $delta_cache -lt 0 ]] && delta_cache=0
-      [[ $delta_output -lt 0 ]] && delta_output=0
-    else
-      jq --arg path "$latest" \
-        --argjson input "$cur_input" \
-        --argjson cacheRead "$cur_cache" \
-        --argjson output "$cur_output" \
-        '.[$path] = {input: $input, cacheRead: $cacheRead, output: $output}' "$BASELINE_FILE" > "${BASELINE_FILE}.tmp" 2>/dev/null && \
-        mv "${BASELINE_FILE}.tmp" "$BASELINE_FILE"
-      delta_input=0
-      delta_cache=0
-      delta_output=0
+    local base_line
+    base_line=$(jq -r ".[\"$latest\"].lineCount // 0" "$BASELINE_FILE" 2>/dev/null)
+    if [[ "$base_line" -gt 0 ]]; then
+      has_baseline=true
+      stored_input=$(jq -r ".[\"$latest\"].input // 0" "$BASELINE_FILE" 2>/dev/null)
+      stored_cache=$(jq -r ".[\"$latest\"].cacheRead // 0" "$BASELINE_FILE" 2>/dev/null)
+      stored_output=$(jq -r ".[\"$latest\"].output // 0" "$BASELINE_FILE" 2>/dev/null)
+      sess_input=$(jq -r ".[\"$latest\"].sessionInput // .[\"$latest\"].input // 0" "$BASELINE_FILE" 2>/dev/null)
+      sess_cache=$(jq -r ".[\"$latest\"].sessionCacheRead // .[\"$latest\"].cacheRead // 0" "$BASELINE_FILE" 2>/dev/null)
+      sess_output=$(jq -r ".[\"$latest\"].sessionOutput // .[\"$latest\"].output // 0" "$BASELINE_FILE" 2>/dev/null)
+      stored_line=$base_line
     fi
-  else
-    echo '{}' > "$BASELINE_FILE"
-    jq --arg path "$latest" \
-      --argjson input "$cur_input" \
-      --argjson cacheRead "$cur_cache" \
-      --argjson output "$cur_output" \
-      '.[$path] = {input: $input, cacheRead: $cacheRead, output: $output}' "$BASELINE_FILE" > "${BASELINE_FILE}.tmp" 2>/dev/null && \
-      mv "${BASELINE_FILE}.tmp" "$BASELINE_FILE"
-    delta_input=0
-    delta_cache=0
-    delta_output=0
   fi
+
+  local cur_input=$stored_input cur_cache=$stored_cache cur_output=$stored_output
+
+  if [[ "$total_lines" -gt "$stored_line" ]]; then
+    local start=$((stored_line + 1))
+    local tail_out
+    tail_out=$(tail -n +"$start" "$latest" 2>/dev/null | jq -s '
+      [.[] | select(.type == "assistant" and .message.usage and .message.id)]
+      | group_by(.message.id)
+      | map(.[0].message.usage)
+      | {
+          input: (map(.input_tokens // 0) | add),
+          cacheRead: (map(.cache_read_input_tokens // 0) | add),
+          output: (map(.output_tokens // 0) | add)
+        }
+    ' 2>/dev/null)
+
+    if [[ -n "$tail_out" && "$tail_out" != "null" ]]; then
+      local add_input add_cache add_output
+      add_input=$(echo "$tail_out" | jq -r '.input // 0')
+      add_cache=$(echo "$tail_out" | jq -r '.cacheRead // 0')
+      add_output=$(echo "$tail_out" | jq -r '.output // 0')
+      cur_input=$((stored_input + add_input))
+      cur_cache=$((stored_cache + add_cache))
+      cur_output=$((stored_output + add_output))
+    fi
+  fi
+
+  if ! $has_baseline; then
+    sess_input=$cur_input
+    sess_cache=$cur_cache
+    sess_output=$cur_output
+  fi
+
+  # Save baseline (use += to keep model/lastContextTokens from TS version)
+  if [[ ! -f "$BASELINE_FILE" ]]; then
+    echo '{}' > "$BASELINE_FILE"
+  fi
+  jq --arg path "$latest" \
+    --argjson input "$cur_input" \
+    --argjson cacheRead "$cur_cache" \
+    --argjson output "$cur_output" \
+    --argjson sessionInput "$sess_input" \
+    --argjson sessionCacheRead "$sess_cache" \
+    --argjson sessionOutput "$sess_output" \
+    --argjson lineCount "$total_lines" \
+    '.[$path] += {input: $input, cacheRead: $cacheRead, output: $output, sessionInput: $sessionInput, sessionCacheRead: $sessionCacheRead, sessionOutput: $sessionOutput, lineCount: $lineCount}' \
+    "$BASELINE_FILE" > "${BASELINE_FILE}.tmp" 2>/dev/null && \
+    mv "${BASELINE_FILE}.tmp" "$BASELINE_FILE"
+
+  local delta_input=$((cur_input - sess_input))
+  local delta_cache=$((cur_cache - sess_cache))
+  local delta_output=$((cur_output - sess_output))
+  [[ $delta_input -lt 0 ]] && delta_input=0
+  [[ $delta_cache -lt 0 ]] && delta_cache=0
+  [[ $delta_output -lt 0 ]] && delta_output=0
 
   local cache_str in_str out_str
   cache_str=$(fmtk "$delta_cache")

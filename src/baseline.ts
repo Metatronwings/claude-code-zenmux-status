@@ -1,11 +1,22 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 const BASELINE_FILE = join(tmpdir(), "czs-baselines.json");
 
-interface TokenCounts { input: number; cacheRead: number; output: number }
-type Baselines = Record<string, TokenCounts>;
+interface Baseline {
+  input: number;
+  cacheRead: number;
+  output: number;
+  sessionInput: number;
+  sessionCacheRead: number;
+  sessionOutput: number;
+  model: string | null;
+  lastContextTokens: number | null;
+  lineCount: number;
+}
+
+type Baselines = Record<string, Baseline>;
 
 function load(): Baselines {
   try { return JSON.parse(readFileSync(BASELINE_FILE, "utf8")); }
@@ -17,16 +28,21 @@ function save(b: Baselines): void {
   catch { /* ignore */ }
 }
 
-/**
- * Returns the baseline counts for a session file.
- * On first call for a given path, records `current` as the baseline (delta = 0).
- */
-export function getBaseline(filePath: string, current: TokenCounts): TokenCounts {
+export function loadBaseline(filePath: string): Baseline | null {
   const baselines = load();
-  if (!(filePath in baselines)) {
-    baselines[filePath] = current;
-    save(baselines);
-    return current;
+  let changed = false;
+  for (const key of Object.keys(baselines)) {
+    if (!existsSync(key)) {
+      delete baselines[key];
+      changed = true;
+    }
   }
-  return baselines[filePath];
+  if (changed) save(baselines);
+  return baselines[filePath] ?? null;
+}
+
+export function saveBaseline(filePath: string, b: Baseline): void {
+  const baselines = load();
+  baselines[filePath] = b;
+  save(baselines);
 }
