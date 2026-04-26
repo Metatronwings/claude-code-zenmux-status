@@ -12,7 +12,7 @@ Display your [Zenmux](https://zenmux.ai) subscription usage, session token stats
 
 **Progress bar mode (`ZENMUX_PROGRESS_BAR=1`):**
 ```
-[Sonnet 4.6 12.3%] 💎 ▓░░░░░░░░░ 8.1% | 7d ████████░░ 81.3% | ↑9.0M ↓56k
+[Sonnet 4.6 12.3%] 💎 ▓░░░░░░░░░ 8.1% | 7d ████████░░ 81.3% | ↖62k ↑230k ↓56k
 📁~/project 🌿(main) ✗ ~3 ?1
 ```
 
@@ -21,7 +21,7 @@ Display your [Zenmux](https://zenmux.ai) subscription usage, session token stats
 - Tier emoji: 💎 Ultra / 🔥 Max / ⭐ Pro / 🌱 Free
 - `5h` — 5-hour rolling window
 - `7d` — 7-day rolling window (always shown by default; set `ZENMUX_HIDE_7D_BELOW_70=1` to hide when below 70%)
-- Progress bar mode also shows: current model `[Sonnet 4.6 12.3%]` with context window percentage (red >80%, yellow >50%, green ≤50%, 1 decimal), and session token delta `↑input ↓output` (resets to 0 each time you open CC)
+- Progress bar mode also shows: current model `[Sonnet 4.6 12.3%]` with context window percentage (red >80%, yellow >50%, green ≤50%, 1 decimal), and session token delta `↖cache ↑input ↓output` (resets to 0 each time you open CC)
 - Abnormal account states are shown inline, e.g. `[monitored]`
 
 ### Line 2 — Workspace status
@@ -83,7 +83,7 @@ To enable progress bar mode:
 }
 ```
 
-The shell script version supports progress bar mode (`ZENMUX_PROGRESS_BAR=1`) and model name display, but not session token statistics.
+The shell script version fully supports progress bar mode (`ZENMUX_PROGRESS_BAR=1`), model name display, and session token statistics.
 
 ### Option 2: npm global install
 

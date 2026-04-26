@@ -42,7 +42,7 @@ if [[ -f "$CACHE_FILE" ]]; then
   fi
   age=$(($(date +%s) - mtime))
   if [[ "$age" -lt "$TTL" ]]; then
-    echo -e "$(cat "$CACHE_FILE")\n${GIT_LINE}"
+    echo -e "$(cat "$CACHE_FILE")${TOKEN_STATS}\n${GIT_LINE}"
     exit 0
   fi
 fi
@@ -156,6 +156,17 @@ render_bar() {
   echo -n "${filled}${partial}${empty}"
 }
 
+fmtk() {
+  local n=$1
+  if [[ $n -ge 1000000 ]]; then
+    awk "BEGIN {printf \"%.1fM\", $n / 1000000}"
+  elif [[ $n -ge 1000 ]]; then
+    echo "$(( (n + 500) / 1000 ))k"
+  else
+    echo "$n"
+  fi
+}
+
 format_model_name() {
   local raw=$1
   local name=${raw##*/}
@@ -190,7 +201,7 @@ get_model_name() {
   name=$(format_model_name "$model")
   # Context percentage: last assistant's total context tokens (input + cache reads)
   local input_tokens ctx=""
-  input_tokens=$(jq -r 'select(.type == "assistant" and .message.usage.input_tokens != null) | .message.usage | ((.input_tokens // 0) + (.cache_creation_input_tokens // 0) + (.cache_read_input_tokens // 0))' "$latest" 2>/dev/null | tail -1)
+  input_tokens=$(jq -r 'select(.type == "assistant" and .message.usage.input_tokens != null) | .message.usage | ((.input_tokens // 0) + (.cache_read_input_tokens // 0))' "$latest" 2>/dev/null | tail -1)
   if [[ -n "$input_tokens" && "$input_tokens" != "null" && "$input_tokens" != "0" && "$input_tokens" -gt 0 ]]; then
     local pct
     pct=$(awk "BEGIN {printf \"%.1f\", $input_tokens * 100 / 1000000}")
@@ -202,6 +213,87 @@ get_model_name() {
   fi
   echo "[${name}${ctx}]"
 }
+
+get_token_stats() {
+  local project_key="${PWD//\//-}"
+  local session_dir="${HOME}/.claude/projects/${project_key}"
+  if [[ ! -d "$session_dir" ]]; then
+    return
+  fi
+  local latest
+  latest=$(ls -t "$session_dir"/*.jsonl 2>/dev/null | head -1)
+  if [[ -z "$latest" ]]; then
+    return
+  fi
+
+  local counts
+  counts=$(jq -s '
+    [.[] | select(.type == "assistant" and .message.usage and .message.id)]
+    | group_by(.message.id)
+    | map(.[0].message.usage)
+    | {
+        input: (map(.input_tokens // 0) | add),
+        cacheRead: (map(.cache_read_input_tokens // 0) | add),
+        output: (map(.output_tokens // 0) | add)
+      }
+  ' "$latest" 2>/dev/null)
+
+  if [[ -z "$counts" || "$counts" == "null" ]]; then
+    return
+  fi
+
+  local cur_input cur_cache cur_output
+  cur_input=$(echo "$counts" | jq -r '.input // 0')
+  cur_cache=$(echo "$counts" | jq -r '.cacheRead // 0')
+  cur_output=$(echo "$counts" | jq -r '.output // 0')
+
+  local BASELINE_FILE="/tmp/czs-baselines.json"
+  local delta_input delta_cache delta_output
+
+  if [[ -f "$BASELINE_FILE" ]]; then
+    local base_input base_cache base_output
+    base_input=$(jq -r ".[\"$latest\"].input // empty" "$BASELINE_FILE" 2>/dev/null)
+    base_cache=$(jq -r ".[\"$latest\"].cacheRead // empty" "$BASELINE_FILE" 2>/dev/null)
+    base_output=$(jq -r ".[\"$latest\"].output // empty" "$BASELINE_FILE" 2>/dev/null)
+    if [[ -n "$base_input" ]]; then
+      delta_input=$((cur_input - base_input))
+      delta_cache=$((cur_cache - base_cache))
+      delta_output=$((cur_output - base_output))
+      [[ $delta_input -lt 0 ]] && delta_input=0
+      [[ $delta_cache -lt 0 ]] && delta_cache=0
+      [[ $delta_output -lt 0 ]] && delta_output=0
+    else
+      jq --arg path "$latest" \
+        --argjson input "$cur_input" \
+        --argjson cacheRead "$cur_cache" \
+        --argjson output "$cur_output" \
+        '.[$path] = {input: $input, cacheRead: $cacheRead, output: $output}' "$BASELINE_FILE" > "${BASELINE_FILE}.tmp" 2>/dev/null && \
+        mv "${BASELINE_FILE}.tmp" "$BASELINE_FILE"
+      delta_input=0
+      delta_cache=0
+      delta_output=0
+    fi
+  else
+    echo '{}' > "$BASELINE_FILE"
+    jq --arg path "$latest" \
+      --argjson input "$cur_input" \
+      --argjson cacheRead "$cur_cache" \
+      --argjson output "$cur_output" \
+      '.[$path] = {input: $input, cacheRead: $cacheRead, output: $output}' "$BASELINE_FILE" > "${BASELINE_FILE}.tmp" 2>/dev/null && \
+      mv "${BASELINE_FILE}.tmp" "$BASELINE_FILE"
+    delta_input=0
+    delta_cache=0
+    delta_output=0
+  fi
+
+  local cache_str in_str out_str
+  cache_str=$(fmtk "$delta_cache")
+  in_str=$(fmtk "$delta_input")
+  out_str=$(fmtk "$delta_output")
+  echo " | ↖${cache_str} ↑${in_str} ↓${out_str}"
+}
+
+TOKEN_STATS=$(get_token_stats)
 
 C5H=$(color_pct "$PCT5H")
 C7D=$(color_pct "$PCT7D")
@@ -229,4 +321,4 @@ fi
 # Cache only the Zenmux line; git line is always fresh
 echo -e "${LINE}" > "$CACHE_FILE"
 
-echo -e "${LINE}\n${GIT_LINE}"
+echo -e "${LINE}${TOKEN_STATS}\n${GIT_LINE}"

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 
 const BASELINE_FILE = join(tmpdir(), "czs-baselines.json");
 
-interface TokenCounts { input: number; output: number }
+interface TokenCounts { input: number; cacheRead: number; output: number }
 type Baselines = Record<string, TokenCounts>;
 
 function load(): Baselines {

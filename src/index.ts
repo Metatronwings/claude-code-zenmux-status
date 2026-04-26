@@ -83,7 +83,7 @@ if (session?.model) {
   }
   modelPrefix = `[${formatModelName(session.model)}${ctx}] `;
 }
-const tokenSuffix = session ? ` | ↑${fmtK(session.inputTokens)} ↓${fmtK(session.outputTokens)}` : "";
+const tokenSuffix = session ? ` | ↖${fmtK(session.cacheReadTokens)} ↑${fmtK(session.inputTokens)} ↓${fmtK(session.outputTokens)}` : "";
 const gitLine = buildGitLine();
 
 // Include useBar in cache key so toggling the option doesn't serve wrong-format cache
