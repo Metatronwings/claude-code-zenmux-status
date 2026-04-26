@@ -9,6 +9,7 @@ export interface SessionStats {
   cacheReadTokens: number;
   outputTokens: number;
   contextPct: number | null;
+  durationSec: number;
 }
 
 export function formatModelName(raw: string): string {
@@ -29,7 +30,7 @@ export function getSessionStats(cwd: string): SessionStats {
       .map(f => ({ path: join(projectDir, f), mtime: statSync(join(projectDir, f)).mtimeMs }))
       .sort((a, b) => b.mtime - a.mtime)[0];
 
-    if (!sessionFile) return { model: null, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, contextPct: null };
+    if (!sessionFile) return { model: null, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, contextPct: null, durationSec: 0 };
 
     const lines = readFileSync(sessionFile.path, "utf8").trimEnd().split("\n");
     const stored = loadBaseline(sessionFile.path);
@@ -64,10 +65,11 @@ export function getSessionStats(cwd: string): SessionStats {
       } catch { /* skip malformed lines */ }
     }
 
-    // Session-start totals: set once, used for cumulative delta display
+    const nowSec = Math.floor(Date.now() / 1000);
     const sessInput = hasBaseline ? (stored.sessionInput ?? stored.input) : inputTokens;
     const sessCache = hasBaseline ? (stored.sessionCacheRead ?? stored.cacheRead) : cacheReadTokens;
     const sessOutput = hasBaseline ? (stored.sessionOutput ?? stored.output) : outputTokens;
+    const startedAt = hasBaseline ? (stored.startedAt ?? nowSec) : nowSec;
 
     saveBaseline(sessionFile.path, {
       input: inputTokens,
@@ -76,6 +78,7 @@ export function getSessionStats(cwd: string): SessionStats {
       sessionInput: sessInput,
       sessionCacheRead: sessCache,
       sessionOutput: sessOutput,
+      startedAt,
       model,
       lastContextTokens,
       lineCount: lines.length,
@@ -88,8 +91,9 @@ export function getSessionStats(cwd: string): SessionStats {
       cacheReadTokens: Math.max(0, cacheReadTokens - sessCache),
       outputTokens: Math.max(0, outputTokens - sessOutput),
       contextPct,
+      durationSec: nowSec - startedAt,
     };
   } catch {
-    return { model: null, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, contextPct: null };
+    return { model: null, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, contextPct: null, durationSec: 0 };
   }
 }

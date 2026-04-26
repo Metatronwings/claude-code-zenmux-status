@@ -167,6 +167,19 @@ fmtk() {
   fi
 }
 
+fmt_duration() {
+  local sec=$1
+  if [[ $sec -lt 60 ]]; then echo "${sec}s"; return; fi
+  local m=$((sec / 60))
+  if [[ $m -lt 60 ]]; then echo "${m}m"; return; fi
+  local h=$((m / 60))
+  local rm=$((m % 60))
+  if [[ $h -lt 24 ]]; then echo "${h}h ${rm}m"; return; fi
+  local d=$((h / 24))
+  local rh=$((h % 24))
+  echo "${d}d ${rh}h"
+}
+
 format_model_name() {
   local raw=$1
   local name=${raw##*/}
@@ -248,7 +261,7 @@ get_token_stats() {
 
   local stored_input=0 stored_cache=0 stored_output=0 stored_line=0
   local sess_input=0 sess_cache=0 sess_output=0
-  local has_baseline=false
+  local has_baseline=false started_at=0
 
   if [[ -f "$BASELINE_FILE" ]]; then
     local base_line
@@ -261,6 +274,7 @@ get_token_stats() {
       sess_input=$(jq -r ".[\"$latest\"].sessionInput // .[\"$latest\"].input // 0" "$BASELINE_FILE" 2>/dev/null)
       sess_cache=$(jq -r ".[\"$latest\"].sessionCacheRead // .[\"$latest\"].cacheRead // 0" "$BASELINE_FILE" 2>/dev/null)
       sess_output=$(jq -r ".[\"$latest\"].sessionOutput // .[\"$latest\"].output // 0" "$BASELINE_FILE" 2>/dev/null)
+      started_at=$(jq -r ".[\"$latest\"].startedAt // 0" "$BASELINE_FILE" 2>/dev/null)
       stored_line=$base_line
     fi
   fi
@@ -292,10 +306,14 @@ get_token_stats() {
     fi
   fi
 
+  local now_sec
+  now_sec=$(date +%s)
+
   if ! $has_baseline; then
     sess_input=$cur_input
     sess_cache=$cur_cache
     sess_output=$cur_output
+    started_at=$now_sec
   fi
 
   # Save baseline (use += to keep model/lastContextTokens from TS version)
@@ -309,8 +327,9 @@ get_token_stats() {
     --argjson sessionInput "$sess_input" \
     --argjson sessionCacheRead "$sess_cache" \
     --argjson sessionOutput "$sess_output" \
+    --argjson startedAt "$started_at" \
     --argjson lineCount "$total_lines" \
-    '.[$path] += {input: $input, cacheRead: $cacheRead, output: $output, sessionInput: $sessionInput, sessionCacheRead: $sessionCacheRead, sessionOutput: $sessionOutput, lineCount: $lineCount}' \
+    '.[$path] += {input: $input, cacheRead: $cacheRead, output: $output, sessionInput: $sessionInput, sessionCacheRead: $sessionCacheRead, sessionOutput: $sessionOutput, startedAt: $startedAt, lineCount: $lineCount}' \
     "$BASELINE_FILE" > "${BASELINE_FILE}.tmp" 2>/dev/null && \
     mv "${BASELINE_FILE}.tmp" "$BASELINE_FILE"
 
@@ -321,11 +340,13 @@ get_token_stats() {
   [[ $delta_cache -lt 0 ]] && delta_cache=0
   [[ $delta_output -lt 0 ]] && delta_output=0
 
-  local cache_str in_str out_str
+  local dur_sec=$((now_sec - started_at))
+  local dur_str cache_str in_str out_str
+  dur_str=$(fmt_duration "$dur_sec")
   cache_str=$(fmtk "$delta_cache")
   in_str=$(fmtk "$delta_input")
   out_str=$(fmtk "$delta_output")
-  echo " | ↖${cache_str} ↑${in_str} ↓${out_str}"
+  echo " ⏱${dur_str} | ↖${cache_str} ↑${in_str} ↓${out_str}"
 }
 
 TOKEN_STATS=$(get_token_stats)

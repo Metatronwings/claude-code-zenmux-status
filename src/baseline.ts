@@ -11,6 +11,7 @@ interface Baseline {
   sessionInput: number;
   sessionCacheRead: number;
   sessionOutput: number;
+  startedAt: number;
   model: string | null;
   lastContextTokens: number | null;
   lineCount: number;

@@ -59,6 +59,16 @@ function fmtK(n: number): string {
   return String(n);
 }
 
+function fmtDuration(sec: number): string {
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ${m % 60}m`;
+  const d = Math.floor(h / 24);
+  return `${d}d ${h % 24}h`;
+}
+
 const apiKey = process.env.ZENMUX_MANAGEMENT_API_KEY;
 
 if (!apiKey) {
@@ -83,7 +93,7 @@ if (session?.model) {
   }
   modelPrefix = `[${formatModelName(session.model)}${ctx}] `;
 }
-const tokenSuffix = session ? ` | ↖${fmtK(session.cacheReadTokens)} ↑${fmtK(session.inputTokens)} ↓${fmtK(session.outputTokens)}` : "";
+const tokenSuffix = session ? ` ⏱${fmtDuration(session.durationSec)} | ↖${fmtK(session.cacheReadTokens)} ↑${fmtK(session.inputTokens)} ↓${fmtK(session.outputTokens)}` : "";
 const gitLine = buildGitLine();
 
 // Include useBar in cache key so toggling the option doesn't serve wrong-format cache
