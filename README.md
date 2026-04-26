@@ -142,6 +142,7 @@ npm install
 | `ZENMUX_PROGRESS_BAR` | 否 | 设为 `1` 启用进度条模式 |
 | `ZENMUX_HIDE_7D_BELOW_70` | 否 | 设为 `1` 时，7d 用量低于 70% 时隐藏 |
 | `ZENMUX_CACHE_TTL` | 否 | 缓存秒数，默认 `60` |
+| `ZENMUX_COMPACT` | 否 | 设为 `1` 启用紧凑模式（去掉进度条，窄终端友好） |
 
 ## 缓存
 

@@ -9,11 +9,14 @@ fi
 
 TTL="${ZENMUX_CACHE_TTL:-60}"
 USE_BAR="${ZENMUX_PROGRESS_BAR:-0}"
+COMPACT=0
+[[ "$ZENMUX_COMPACT" == "1" || "$(tput cols 2>/dev/null || echo 0)" -lt 120 && "$(tput cols 2>/dev/null || echo 0)" -gt 0 ]] && COMPACT=1
 API_URL="https://zenmux.ai/api/v1/management/subscription/detail"
 
 # Cache key: sha256 of API key + mode, first 16 hex chars
 CACHE_SUFFIX=""
 [[ "$USE_BAR" == "1" ]] && CACHE_SUFFIX=":bar"
+[[ "$COMPACT" == "1" ]] && CACHE_SUFFIX+=":compact"
 if command -v sha256sum &>/dev/null; then
   CACHE_KEY=$(printf '%s' "${API_KEY}${CACHE_SUFFIX}" | sha256sum | cut -c1-16)
 else
@@ -364,9 +367,13 @@ if [[ "$USE_BAR" == "1" ]]; then
     MODEL_PREFIX=$(get_model_name)
     [[ -n "$MODEL_PREFIX" ]] && MODEL_PREFIX="${MODEL_PREFIX} "
   fi
-  BAR5="${C5H}$(render_bar "$PCT5H")\x1b[0m"
-  BAR7="${C7D}$(render_bar "$PCT7D")\x1b[0m"
-  LINE="${MODEL_PREFIX}${EMO} ${BAR5} $(fmt_pct "$PCT5H") ${R5} | 7d ${BAR7} $(fmt_pct "$PCT7D") ${R7}"
+  if [[ "$COMPACT" == "1" ]]; then
+    LINE="${MODEL_PREFIX}${EMO} 5h:${C5H}$(fmt_pct "$PCT5H")\x1b[0m ${R5} | 7d:${C7D}$(fmt_pct "$PCT7D")\x1b[0m ${R7}"
+  else
+    BAR5="${C5H}$(render_bar "$PCT5H")\x1b[0m"
+    BAR7="${C7D}$(render_bar "$PCT7D")\x1b[0m"
+    LINE="${MODEL_PREFIX}${EMO} ${BAR5} $(fmt_pct "$PCT5H") ${R5} | 7d ${BAR7} $(fmt_pct "$PCT7D") ${R7}"
+  fi
   if [[ -n "$BAD" ]]; then
     LINE="${BAD# } | ${LINE}"
   fi

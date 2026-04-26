@@ -35,14 +35,25 @@ function renderGradientBar(rate: number): string {
 
 /**
  * Bar mode:   returns "<tierEmoji> <gradBar> <pct>% [| 7d <gradBar> <pct>%]"
- *             — model name and token counts are prepended/appended by index.ts
+ * Compact:    returns "<tierEmoji> 5h:<pct> [| 7d:<pct>]" — no bars, shorter labels
  * Non-bar mode: returns "<tierEmoji> <tier> | 5h <pct>% $x/$y ↻t [| 7d ...]"
  */
-export function formatStatus(detail: SubscriptionDetail, serverNowMs: number, useBar: boolean, hide7dBelow70 = false): string {
+export function formatStatus(detail: SubscriptionDetail, serverNowMs: number, useBar: boolean, hide7dBelow70 = false, compact = false): string {
   const { plan, account_status, quota_7_day, quota_5_hour } = detail;
   const badge = STATUS_BADGE[account_status] ?? "";
   const emoji = TIER_EMOJI[plan.tier] ?? "⚡";
   const show7d = !hide7dBelow70 || quota_7_day.usage_percentage > 0.70;
+
+  if (compact) {
+    const parts: string[] = [
+      `${emoji} 5h:${pct(quota_5_hour.usage_percentage)} ${resetStr(quota_5_hour, serverNowMs)}`,
+    ];
+    if (show7d) {
+      parts.push(`7d:${pct(quota_7_day.usage_percentage)} ${resetStr(quota_7_day, serverNowMs)}`);
+    }
+    if (badge) parts.unshift(badge.trim());
+    return parts.join(" | ");
+  }
 
   if (useBar) {
     const parts: string[] = [
