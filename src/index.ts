@@ -1,7 +1,7 @@
 import { execSync } from "child_process";
 import { fetchDetail } from "./api.js";
 import { formatStatus } from "./format.js";
-import { readCache, writeCache } from "./cache.js";
+import { readCache, writeCache, tryAcquireLock, releaseLock, waitForCache } from "./cache.js";
 import { getSessionStats, formatModelName } from "./session.js";
 
 function getGitBranch(): string | null {
@@ -107,6 +107,30 @@ if (cached !== null) {
   process.exit(0);
 }
 
+// Cache miss — use a lock so only one process hits the API
+if (tryAcquireLock(cacheKey)) {
+  try {
+    const { detail, serverNowMs } = await fetchDetail(apiKey);
+    const out = formatStatus(detail, serverNowMs, useBar, hide7dBelow70, compact);
+    writeCache(cacheKey, out);
+    process.stdout.write(modelPrefix + out + tokenSuffix + "\n" + gitLine + "\n");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stdout.write(`⚡ ERR: ${msg}\n` + gitLine + "\n");
+  } finally {
+    releaseLock(cacheKey);
+  }
+  process.exit(0);
+}
+
+// Another process holds the lock — wait up to 5s for it to populate the cache
+const waited = await waitForCache(cacheKey, 5000);
+if (waited !== null) {
+  process.stdout.write(modelPrefix + waited + tokenSuffix + "\n" + gitLine + "\n");
+  process.exit(0);
+}
+
+// Timed out — fall back to fetching directly
 try {
   const { detail, serverNowMs } = await fetchDetail(apiKey);
   const out = formatStatus(detail, serverNowMs, useBar, hide7dBelow70, compact);
@@ -115,5 +139,5 @@ try {
 } catch (err) {
   const msg = err instanceof Error ? err.message : String(err);
   process.stdout.write(`⚡ ERR: ${msg}\n` + gitLine + "\n");
-  process.exit(0);
 }
+process.exit(0);
