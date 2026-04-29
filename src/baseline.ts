@@ -1,10 +1,9 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readFileSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-const BASELINE_FILE = join(tmpdir(), "czs-baselines.json");
-
-interface Baseline {
+export interface Baseline {
   input: number;
   cacheRead: number;
   output: number;
@@ -17,33 +16,26 @@ interface Baseline {
   lineCount: number;
 }
 
-type Baselines = Record<string, Baseline>;
-
-function load(): Baselines {
-  try { return JSON.parse(readFileSync(BASELINE_FILE, "utf8")); }
-  catch { return {}; }
-}
-
-function save(b: Baselines): void {
-  try { writeFileSync(BASELINE_FILE, JSON.stringify(b)); }
-  catch { /* ignore */ }
+function baselinePath(filePath: string): string {
+  const hash = createHash("sha256").update(filePath).digest("hex").slice(0, 16);
+  return join(tmpdir(), `czs-bl-${hash}.json`);
 }
 
 export function loadBaseline(filePath: string): Baseline | null {
-  const baselines = load();
-  let changed = false;
-  for (const key of Object.keys(baselines)) {
-    if (!existsSync(key)) {
-      delete baselines[key];
-      changed = true;
-    }
+  try {
+    return JSON.parse(readFileSync(baselinePath(filePath), "utf8"));
+  } catch {
+    return null;
   }
-  if (changed) save(baselines);
-  return baselines[filePath] ?? null;
 }
 
 export function saveBaseline(filePath: string, b: Baseline): void {
-  const baselines = load();
-  baselines[filePath] = b;
-  save(baselines);
+  const target = baselinePath(filePath);
+  const tmp = target + ".tmp." + process.pid;
+  try {
+    writeFileSync(tmp, JSON.stringify(b), "utf8");
+    renameSync(tmp, target);
+  } catch {
+    try { unlinkSync(tmp); } catch { /* best-effort cleanup */ }
+  }
 }
