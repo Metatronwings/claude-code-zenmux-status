@@ -14,6 +14,7 @@ export interface Baseline {
   model: string | null;
   lastContextTokens: number | null;
   lineCount: number;
+  sessionId?: string;
 }
 
 function baselinePath(filePath: string): string {

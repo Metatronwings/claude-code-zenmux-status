@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import { homedir } from "node:os";
 import { loadBaseline, saveBaseline } from "./baseline.js";
 
@@ -20,15 +20,55 @@ export function formatModelName(raw: string): string {
   return `${family.charAt(0).toUpperCase()}${family.slice(1)} ${major}.${minor}`;
 }
 
+interface SessionMeta {
+  pid: number;
+  sessionId: string;
+  cwd: string;
+  status: string;
+}
+
+/** Find the active session for `cwd` by reading ~/.claude/sessions/<pid>.json. */
+function findActiveSession(cwd: string): string | null {
+  try {
+    const sessionsDir = join(homedir(), ".claude", "sessions");
+    const files = readdirSync(sessionsDir).filter(f => f.endsWith(".json"));
+    for (const f of files) {
+      try {
+        const meta: SessionMeta = JSON.parse(readFileSync(join(sessionsDir, f), "utf8"));
+        if (meta.cwd !== cwd) continue;
+        // Verify the process is still alive
+        process.kill(meta.pid, 0);
+        return meta.sessionId;
+      } catch { /* stale or unreadable — skip */ }
+    }
+  } catch { /* sessions dir doesn't exist */ }
+  return null;
+}
+
 export function getSessionStats(cwd: string): SessionStats {
   try {
     const projectKey = cwd.replace(/\//g, "-");
     const projectDir = join(homedir(), ".claude", "projects", projectKey);
 
-    const sessionFile = readdirSync(projectDir)
-      .filter(f => f.endsWith(".jsonl"))
-      .map(f => ({ path: join(projectDir, f), mtime: statSync(join(projectDir, f)).mtimeMs }))
-      .sort((a, b) => b.mtime - a.mtime)[0];
+    // Prefer the active session from ~/.claude/sessions/ over mtime-based selection.
+    // This avoids reading the wrong session's JSONL when a new session starts.
+    const activeSessionId = findActiveSession(cwd);
+    let sessionFile: { path: string } | undefined;
+
+    if (activeSessionId) {
+      const activePath = join(projectDir, `${activeSessionId}.jsonl`);
+      try {
+        statSync(activePath);
+        sessionFile = { path: activePath };
+      } catch { /* file doesn't exist yet — fall through to mtime fallback */ }
+    }
+
+    if (!sessionFile) {
+      sessionFile = readdirSync(projectDir)
+        .filter(f => f.endsWith(".jsonl"))
+        .map(f => ({ path: join(projectDir, f), mtime: statSync(join(projectDir, f)).mtimeMs }))
+        .sort((a, b) => b.mtime - a.mtime)[0];
+    }
 
     if (!sessionFile) return { model: null, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, contextPct: null, durationSec: 0 };
 
@@ -36,12 +76,14 @@ export function getSessionStats(cwd: string): SessionStats {
     const stored = loadBaseline(sessionFile.path);
     const hasBaseline = stored != null && typeof stored.lineCount === "number" && stored.lineCount >= 0;
 
-    let inputTokens = stored?.input ?? 0;
-    let cacheReadTokens = stored?.cacheRead ?? 0;
-    let outputTokens = stored?.output ?? 0;
-    let model = stored?.model ?? null;
-    let lastContextTokens = stored?.lastContextTokens ?? null;
-    const startLine = hasBaseline ? stored!.lineCount : 0;
+    const sessionId = basename(sessionFile.path, ".jsonl");
+
+    let inputTokens = !hasBaseline ? 0 : (stored?.input ?? 0);
+    let cacheReadTokens = !hasBaseline ? 0 : (stored?.cacheRead ?? 0);
+    let outputTokens = !hasBaseline ? 0 : (stored?.output ?? 0);
+    let model = !hasBaseline ? null : (stored?.model ?? null);
+    let lastContextTokens = !hasBaseline ? null : (stored?.lastContextTokens ?? null);
+    const startLine = !hasBaseline ? 0 : stored!.lineCount;
 
     let lastProcessedLine = startLine;
     const seenIds = new Set<string>();
@@ -78,10 +120,11 @@ export function getSessionStats(cwd: string): SessionStats {
     }
 
     const nowSec = Math.floor(Date.now() / 1000);
-    const sessInput = hasBaseline ? (stored.sessionInput ?? stored.input) : inputTokens;
-    const sessCache = hasBaseline ? (stored.sessionCacheRead ?? stored.cacheRead) : cacheReadTokens;
-    const sessOutput = hasBaseline ? (stored.sessionOutput ?? stored.output) : outputTokens;
-    const startedAt = hasBaseline ? (stored.startedAt ?? nowSec) : nowSec;
+    const freshSession = !hasBaseline;
+    const sessInput = freshSession ? inputTokens : (stored!.sessionInput ?? stored!.input);
+    const sessCache = freshSession ? cacheReadTokens : (stored!.sessionCacheRead ?? stored!.cacheRead);
+    const sessOutput = freshSession ? outputTokens : (stored!.sessionOutput ?? stored!.output);
+    const startedAt = freshSession ? nowSec : (stored!.startedAt ?? nowSec);
 
     saveBaseline(sessionFile.path, {
       input: inputTokens,
@@ -94,6 +137,7 @@ export function getSessionStats(cwd: string): SessionStats {
       model,
       lastContextTokens,
       lineCount: lastProcessedLine,
+      sessionId,
     });
 
     const contextPct = lastContextTokens != null ? Math.min(1, lastContextTokens / 1_000_000) : null;
