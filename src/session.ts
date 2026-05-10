@@ -43,6 +43,7 @@ export function getSessionStats(cwd: string): SessionStats {
     let lastContextTokens = stored?.lastContextTokens ?? null;
     const startLine = hasBaseline ? stored!.lineCount : 0;
 
+    let lastProcessedLine = startLine;
     const seenIds = new Set<string>();
     for (let i = startLine; i < lines.length; i++) {
       if (!lines[i]) continue;
@@ -62,7 +63,18 @@ export function getSessionStats(cwd: string): SessionStats {
           if (entry.message.model) model = entry.message.model;
           lastContextTokens = nc + cr;
         }
-      } catch { /* skip malformed lines */ }
+        lastProcessedLine = i + 1;
+      } catch { /* skip malformed lines — don't advance lastProcessedLine */ }
+    }
+
+    if (model === null) {
+      for (let i = lines.length - 1; i >= 0; i--) {
+        if (!lines[i]) continue;
+        try {
+          const m = JSON.parse(lines[i]).message?.model;
+          if (m) { model = m; break; }
+        } catch { /* skip */ }
+      }
     }
 
     const nowSec = Math.floor(Date.now() / 1000);
@@ -81,7 +93,7 @@ export function getSessionStats(cwd: string): SessionStats {
       startedAt,
       model,
       lastContextTokens,
-      lineCount: lines.length,
+      lineCount: lastProcessedLine,
     });
 
     const contextPct = lastContextTokens != null ? Math.min(1, lastContextTokens / 1_000_000) : null;
