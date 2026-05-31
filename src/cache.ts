@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, renameSync, unlinkSync, mkdirSync, rmdirSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync, unlinkSync, mkdirSync, rmdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -40,12 +40,27 @@ export function writeCache(apiKey: string, out: string): void {
   }
 }
 
+/** Locks older than this are treated as stale (holder crashed) and reclaimed. */
+const STALE_LOCK_MS = 10_000;
+
 /** Acquire an inter-process lock. `mkdirSync` is atomic on all platforms. */
 export function tryAcquireLock(apiKey: string): boolean {
+  const dir = lockPath(apiKey);
   try {
-    mkdirSync(lockPath(apiKey));
+    mkdirSync(dir);
     return true;
   } catch {
+    // Lock exists. If it's stale (holder likely crashed), reclaim it once.
+    try {
+      const age = Date.now() - statSync(dir).mtimeMs;
+      if (age > STALE_LOCK_MS) {
+        rmdirSync(dir);
+        mkdirSync(dir);
+        return true;
+      }
+    } catch {
+      // Lock vanished or race with another reclaimer — treat as not acquired.
+    }
     return false;
   }
 }
