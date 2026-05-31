@@ -107,7 +107,7 @@ function parseUTC(iso: string): number {
 
 function timeUntil(epochMs: number, nowMs: number): string | null {
   const ms = epochMs - nowMs;
-  if (ms <= 0) return null;
+  if (!Number.isFinite(ms) || ms <= 0) return null;
   return formatDuration(ms);
 }
 
