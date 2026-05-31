@@ -47,9 +47,10 @@ interface ApiResponse {
   data: SubscriptionDetail | null;
 }
 
-export async function fetchDetail(apiKey: string): Promise<FetchResult> {
+export async function fetchDetail(apiKey: string, timeoutMs = 5000): Promise<FetchResult> {
   const res = await fetch(API_URL, {
     headers: { Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(timeoutMs),
   });
 
   if (!res.ok) {
@@ -63,7 +64,8 @@ export async function fetchDetail(apiKey: string): Promise<FetchResult> {
   }
 
   const dateHeader = res.headers.get("date");
-  const serverNowMs = dateHeader ? new Date(dateHeader).getTime() : Date.now();
+  const parsed = dateHeader ? new Date(dateHeader).getTime() : NaN;
+  const serverNowMs = Number.isNaN(parsed) ? Date.now() : parsed;
 
   return { detail: json.data, serverNowMs };
 }
