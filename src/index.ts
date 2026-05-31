@@ -31,6 +31,7 @@ const ttlMs = Number(process.env.ZENMUX_CACHE_TTL ?? 60) * 1000;
 const useBar = process.env.ZENMUX_PROGRESS_BAR === "1";
 const hide7dBelow70 = process.env.ZENMUX_HIDE_7D_BELOW_70 === "1";
 const compact = process.env.ZENMUX_COMPACT === "1";
+const apiTimeoutMs = Number(process.env.ZENMUX_API_TIMEOUT ?? 5) * 1000;
 
 // Session stats and git line are always fresh — never cached
 const cwd = process.cwd();
@@ -51,22 +52,36 @@ const gitLine = buildGitLine();
 // Include useBar/compact in cache key so toggling options doesn't serve wrong-format cache
 const cacheKey = apiKey + (useBar ? ":bar" : "") + (compact ? ":compact" : "");
 
+function emitOk(body: string): void {
+  process.stdout.write(modelPrefix + body + tokenSuffix + "\n" + gitLine + "\n");
+}
+
+function emitErr(msg: string): void {
+  process.stdout.write(`⚡ ERR: ${msg}\n` + gitLine + "\n");
+}
+
+async function fetchFormatAndOutput(): Promise<void> {
+  try {
+    const { detail, serverNowMs } = await fetchDetail(apiKey!, apiTimeoutMs);
+    const out = formatStatus(detail, serverNowMs, useBar, hide7dBelow70, compact);
+    writeCache(cacheKey, out);
+    emitOk(out);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    emitErr(msg);
+  }
+}
+
 const cached = readCache(cacheKey, ttlMs);
 if (cached !== null) {
-  process.stdout.write(modelPrefix + cached + tokenSuffix + "\n" + gitLine + "\n");
+  emitOk(cached);
   process.exit(0);
 }
 
 // Cache miss — use a lock so only one process hits the API
 if (tryAcquireLock(cacheKey)) {
   try {
-    const { detail, serverNowMs } = await fetchDetail(apiKey);
-    const out = formatStatus(detail, serverNowMs, useBar, hide7dBelow70, compact);
-    writeCache(cacheKey, out);
-    process.stdout.write(modelPrefix + out + tokenSuffix + "\n" + gitLine + "\n");
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    process.stdout.write(`⚡ ERR: ${msg}\n` + gitLine + "\n");
+    await fetchFormatAndOutput();
   } finally {
     releaseLock(cacheKey);
   }
@@ -76,18 +91,10 @@ if (tryAcquireLock(cacheKey)) {
 // Another process holds the lock — wait up to 5s for it to populate the cache
 const waited = await waitForCache(cacheKey, 5000);
 if (waited !== null) {
-  process.stdout.write(modelPrefix + waited + tokenSuffix + "\n" + gitLine + "\n");
+  emitOk(waited);
   process.exit(0);
 }
 
 // Timed out — fall back to fetching directly
-try {
-  const { detail, serverNowMs } = await fetchDetail(apiKey);
-  const out = formatStatus(detail, serverNowMs, useBar, hide7dBelow70, compact);
-  writeCache(cacheKey, out);
-  process.stdout.write(modelPrefix + out + tokenSuffix + "\n" + gitLine + "\n");
-} catch (err) {
-  const msg = err instanceof Error ? err.message : String(err);
-  process.stdout.write(`⚡ ERR: ${msg}\n` + gitLine + "\n");
-}
+await fetchFormatAndOutput();
 process.exit(0);
