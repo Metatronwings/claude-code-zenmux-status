@@ -60,13 +60,23 @@ export function getSessionStats(cwd: string): SessionStats {
       try {
         statSync(activePath);
         sessionFile = { path: activePath };
-      } catch { /* file doesn't exist yet — fall through to mtime fallback */ }
+      } catch {
+        // Active session exists but JSONL not written yet — return zeros
+        // rather than falling back to an old session's stale data.
+        return { model: null, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, contextPct: null, durationSec: 0 };
+      }
     }
 
     if (!sessionFile) {
       sessionFile = readdirSync(projectDir)
         .filter(f => f.endsWith(".jsonl"))
-        .map(f => ({ path: join(projectDir, f), mtime: statSync(join(projectDir, f)).mtimeMs }))
+        .flatMap(f => {
+          try {
+            return [{ path: join(projectDir, f), mtime: statSync(join(projectDir, f)).mtimeMs }];
+          } catch {
+            return []; // file disappeared between readdir and stat
+          }
+        })
         .sort((a, b) => b.mtime - a.mtime)[0];
     }
 

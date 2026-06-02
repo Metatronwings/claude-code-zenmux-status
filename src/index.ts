@@ -27,11 +27,18 @@ if (!apiKey) {
   process.exit(1);
 }
 
-const ttlMs = Number(process.env.ZENMUX_CACHE_TTL ?? 60) * 1000;
+/** Parse a numeric env var. Treats empty string and NaN/Infinity/negative as default. */
+function safeNum(raw: string | undefined, defaultVal: number): number {
+  if (raw === undefined || raw === "") return defaultVal;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : defaultVal;
+}
+
+const ttlMs = safeNum(process.env.ZENMUX_CACHE_TTL, 60) * 1000;
 const useBar = process.env.ZENMUX_PROGRESS_BAR === "1";
 const hide7dBelow70 = process.env.ZENMUX_HIDE_7D_BELOW_70 === "1";
 const compact = process.env.ZENMUX_COMPACT === "1";
-const apiTimeoutMs = Number(process.env.ZENMUX_API_TIMEOUT ?? 5) * 1000;
+const apiTimeoutMs = safeNum(process.env.ZENMUX_API_TIMEOUT, 5) * 1000;
 
 // Session stats and git line are always fresh — never cached
 const cwd = process.cwd();
@@ -50,7 +57,7 @@ const tokenSuffix = session ? ` ⏱${fmtDuration(session.durationSec)} | ↖${fm
 const gitLine = buildGitLine();
 
 // Include useBar/compact in cache key so toggling options doesn't serve wrong-format cache
-const cacheKey = apiKey + (useBar ? ":bar" : "") + (compact ? ":compact" : "");
+const cacheKey = apiKey + (useBar ? ":bar" : "") + (compact ? ":compact" : "") + (hide7dBelow70 ? ":hide7d" : "");
 
 function emitOk(body: string): void {
   process.stdout.write(modelPrefix + body + tokenSuffix + "\n" + gitLine + "\n");
@@ -89,7 +96,7 @@ if (tryAcquireLock(cacheKey)) {
 }
 
 // Another process holds the lock — wait up to 5s for it to populate the cache
-const waited = await waitForCache(cacheKey, 5000);
+const waited = await waitForCache(cacheKey, 5000, ttlMs);
 if (waited !== null) {
   emitOk(waited);
   process.exit(0);

@@ -17,7 +17,8 @@ const TIER_EMOJI: Record<string, string> = {
 const BAR_WIDTH = 10;
 
 function renderGradientBar(rate: number): string {
-  const pos = rate * BAR_WIDTH;
+  const clamped = Math.max(0, Math.min(1, rate));
+  const pos = clamped * BAR_WIDTH;
   const full = Math.floor(pos);
   const frac = pos - full;
 
@@ -85,7 +86,7 @@ function resetStr(q: QuotaWindow, nowMs: number): string {
 
 function formatWindow(label: string, q: QuotaWindow, nowMs: number): string {
   const usagePct = pct(q.usage_percentage);
-  const dollars = `$${q.used_value_usd.toFixed(2)}/$${q.max_value_usd.toFixed(2)}`;
+  const dollars = `$${q.used_value_usd?.toFixed(2) ?? "?"}/$${q.max_value_usd?.toFixed(2) ?? "?"}`;
 
   if (q.resets_at === null) {
     return `${label} ${usagePct} ${dollars} (inactive)`;
@@ -112,6 +113,7 @@ function timeUntil(epochMs: number, nowMs: number): string | null {
 }
 
 function formatDuration(ms: number): string {
+  if (ms < 60_000) return "<1m";
   const totalMin = Math.floor(ms / 60_000);
   const d = Math.floor(totalMin / 1440);
   const h = Math.floor((totalMin % 1440) / 60);

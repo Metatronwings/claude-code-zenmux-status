@@ -59,8 +59,12 @@ export async function fetchDetail(apiKey: string, timeoutMs = 5000): Promise<Fet
 
   const json = (await res.json()) as ApiResponse;
 
-  if (!json.success || !json.data) {
-    throw new Error(json.message ?? "API returned no data");
+  if (!json.success) {
+    throw new Error(json.message ?? `API reported failure (HTTP ${res.status})`);
+  }
+
+  if (!json.data) {
+    throw new Error("API returned no data");
   }
 
   const dateHeader = res.headers.get("date");

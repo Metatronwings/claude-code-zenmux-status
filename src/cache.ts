@@ -73,11 +73,11 @@ export function releaseLock(apiKey: string): void {
  * Wait for another process (that holds the lock) to populate the cache.
  * Returns the cached string, or null if timed out.
  */
-export async function waitForCache(apiKey: string, timeoutMs: number): Promise<string | null> {
+export async function waitForCache(apiKey: string, timeoutMs: number, ttlMs: number): Promise<string | null> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     await new Promise(r => setTimeout(r, 200));
-    const out = readCache(apiKey, 60_000);
+    const out = readCache(apiKey, ttlMs);
     if (out !== null) return out;
   }
   return null;

@@ -19,17 +19,20 @@ function getGitStatus(): { counts: string; isDirty: boolean } {
       timeout: 1000,
     }).toString();
     const lines = out.split("\n").filter(l => l.length > 0);
-    let added = 0, modified = 0, untracked = 0;
+    let added = 0, modified = 0, deleted = 0, untracked = 0;
     for (const line of lines) {
-      if (line[0] === "?" && line[1] === "?") untracked++;
-      else if (line[0] === "A")               added++;
-      else                                    modified++;
+      const s = line.slice(0, 2);
+      if (s === "??")                     untracked++;
+      else if (s[0] === "A")               added++;
+      else if (s[0] === "D" || s[1] === "D") deleted++;
+      else                                 modified++;
     }
     const parts: string[] = [];
     if (added > 0)     parts.push(`\x1b[32m+${added}\x1b[0m`);
     if (modified > 0)  parts.push(`\x1b[33m~${modified}\x1b[0m`);
+    if (deleted > 0)   parts.push(`\x1b[31m-${deleted}\x1b[0m`);
     if (untracked > 0) parts.push(`\x1b[31m?${untracked}\x1b[0m`);
-    const isDirty = added + modified + untracked > 0;
+    const isDirty = added + modified + deleted + untracked > 0;
     return { counts: parts.join(" "), isDirty };
   } catch {
     return { counts: "", isDirty: false };
