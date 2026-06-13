@@ -1,4 +1,7 @@
 import type { SubscriptionDetail, QuotaWindow } from "./api.js";
+import { pctColor } from "./utils.js";
+
+export type DisplayMode = "full" | "bar" | "compact";
 
 const STATUS_BADGE: Record<string, string> = {
   monitored: " [monitored]",
@@ -30,22 +33,28 @@ function renderGradientBar(rate: number): string {
     bar = bar.padEnd(BAR_WIDTH, "░");
   }
 
-  const color = rate > 0.80 ? "\x1b[31m" : rate > 0.50 ? "\x1b[33m" : "\x1b[32m";
-  return color + bar + "\x1b[0m";
+  return pctColor(rate) + bar + "\x1b[0m";
 }
 
 /**
- * Bar mode:   returns "<tierEmoji> <gradBar> <pct>% [| 7d <gradBar> <pct>%]"
- * Compact:    returns "<tierEmoji> 5h:<pct> [| 7d:<pct>]" — no bars, shorter labels
- * Non-bar mode: returns "<tierEmoji> <tier> | 5h <pct>% $x/$y ↻t [| 7d ...]"
+ * Format a subscription detail into a status-line string.
+ *
+ * @param mode  "full" = tier + dollar amounts + countdowns;
+ *              "bar"  = tier + gradient bars + percentages;
+ *              "compact" = minimal, no bars, short labels
  */
-export function formatStatus(detail: SubscriptionDetail, serverNowMs: number, useBar: boolean, hide7dBelow70 = false, compact = false): string {
+export function formatStatus(
+  detail: SubscriptionDetail,
+  serverNowMs: number,
+  mode: DisplayMode = "full",
+  hide7dBelow70 = false
+): string {
   const { plan, account_status, quota_7_day, quota_5_hour } = detail;
   const badge = STATUS_BADGE[account_status] ?? "";
   const emoji = TIER_EMOJI[plan.tier] ?? "⚡";
   const show7d = !hide7dBelow70 || quota_7_day.usage_percentage > 0.70;
 
-  if (compact) {
+  if (mode === "compact") {
     const parts: string[] = [
       `${emoji} 5h:${pct(quota_5_hour.usage_percentage)} ${resetStr(quota_5_hour, serverNowMs)}`,
     ];
@@ -56,7 +65,7 @@ export function formatStatus(detail: SubscriptionDetail, serverNowMs: number, us
     return parts.join(" | ");
   }
 
-  if (useBar) {
+  if (mode === "bar") {
     const parts: string[] = [
       `${emoji} ${renderGradientBar(quota_5_hour.usage_percentage)} ${pct(quota_5_hour.usage_percentage)} ${resetStr(quota_5_hour, serverNowMs)}`.trimEnd(),
     ];
@@ -67,7 +76,7 @@ export function formatStatus(detail: SubscriptionDetail, serverNowMs: number, us
     return parts.join(" | ");
   }
 
-  // Non-bar mode: full detail with dollar amounts and countdowns
+  // Full mode: tier + dollar amounts + countdowns
   const parts: string[] = [
     `${emoji} ${plan.tier}${badge}`,
     formatWindow("5h", quota_5_hour, serverNowMs),
@@ -112,8 +121,8 @@ function timeUntil(epochMs: number, nowMs: number): string | null {
   return formatDuration(ms);
 }
 
-function formatDuration(ms: number): string {
-  if (ms < 60_000) return "<1m";
+export function formatDuration(ms: number, showSeconds = false): string {
+  if (ms < 60_000) return showSeconds ? `${Math.floor(ms / 1000)}s` : "<1m";
   const totalMin = Math.floor(ms / 60_000);
   const d = Math.floor(totalMin / 1440);
   const h = Math.floor((totalMin % 1440) / 60);

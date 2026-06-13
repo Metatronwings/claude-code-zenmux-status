@@ -1,10 +1,16 @@
 import { execSync } from "child_process";
 
+// Prevent git config from executing external commands (e.g. core.fsmonitor).
+// GIT_CONFIG_NOSYSTEM blocks system-level config; GIT_OPTIONAL_LOCKS=0
+// avoids unnecessary lock contention in read-only operations.
+const GIT_ENV = { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_OPTIONAL_LOCKS: "0" };
+
 function getGitBranch(): string | null {
   try {
     const branch = execSync("git rev-parse --abbrev-ref HEAD", {
       stdio: ["ignore", "pipe", "ignore"],
       timeout: 1000,
+      env: GIT_ENV,
     }).toString().trim();
     return branch === "HEAD" ? null : branch;
   } catch {
@@ -14,9 +20,12 @@ function getGitBranch(): string | null {
 
 function getGitStatus(): { counts: string; isDirty: boolean } {
   try {
-    const out = execSync("git status --porcelain", {
+    // -c core.fsmonitor= disables file-system monitor hook that could exec
+    // arbitrary commands in a malicious repo's .git/config.
+    const out = execSync("git -c core.fsmonitor= status --porcelain", {
       stdio: ["ignore", "pipe", "ignore"],
       timeout: 1000,
+      env: GIT_ENV,
     }).toString();
     const lines = out.split("\n").filter(l => l.length > 0);
     let added = 0, modified = 0, deleted = 0, untracked = 0;

@@ -1,7 +1,5 @@
-import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, renameSync, unlinkSync, mkdirSync, rmdirSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFileSync, renameSync, mkdirSync, rmdirSync, statSync } from "node:fs";
+import { tmpPath, atomicWriteJson } from "./utils.js";
 
 interface CacheEntry {
   ts: number;   // Date.now() when cached
@@ -9,8 +7,7 @@ interface CacheEntry {
 }
 
 function cachePath(apiKey: string): string {
-  const hash = createHash("sha256").update(apiKey).digest("hex").slice(0, 16);
-  return join(tmpdir(), `czs-${hash}.cache`);
+  return tmpPath("czs", apiKey, ".cache");
 }
 
 function lockPath(apiKey: string): string {
@@ -29,15 +26,7 @@ export function readCache(apiKey: string, ttlMs: number): string | null {
 }
 
 export function writeCache(apiKey: string, out: string): void {
-  const target = cachePath(apiKey);
-  const tmp = target + ".tmp." + process.pid;
-  try {
-    const entry: CacheEntry = { ts: Date.now(), out };
-    writeFileSync(tmp, JSON.stringify(entry), "utf8");
-    renameSync(tmp, target);
-  } catch {
-    try { unlinkSync(tmp); } catch { /* best-effort cleanup */ }
-  }
+  atomicWriteJson(cachePath(apiKey), { ts: Date.now(), out });
 }
 
 /** Locks older than this are treated as stale (holder crashed) and reclaimed. */
@@ -50,16 +39,22 @@ export function tryAcquireLock(apiKey: string): boolean {
     mkdirSync(dir);
     return true;
   } catch {
-    // Lock exists. If it's stale (holder likely crashed), reclaim it once.
+    // Lock exists. If it's stale (holder likely crashed), try to reclaim.
     try {
       const age = Date.now() - statSync(dir).mtimeMs;
       if (age > STALE_LOCK_MS) {
-        rmdirSync(dir);
+        // Atomically rename the stale lock dir to a unique name.
+        // renameSync is atomic — only one process can move the dir.
+        // Losers get ENOENT (dir already moved by winner) and fall through.
+        const staleDir = dir + ".reap." + process.pid;
+        renameSync(dir, staleDir);
+        try { rmdirSync(staleDir); } catch { /* best-effort cleanup */ }
+        // Create a fresh lock for ourselves
         mkdirSync(dir);
         return true;
       }
     } catch {
-      // Lock vanished or race with another reclaimer — treat as not acquired.
+      // Lock vanished, race with another reclaimer, or rename failed.
     }
     return false;
   }

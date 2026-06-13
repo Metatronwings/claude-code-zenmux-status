@@ -1,7 +1,5 @@
-import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
+import { tmpPath, atomicWriteJson } from "./utils.js";
 
 export interface Baseline {
   input: number;
@@ -18,8 +16,7 @@ export interface Baseline {
 }
 
 function baselinePath(filePath: string): string {
-  const hash = createHash("sha256").update(filePath).digest("hex").slice(0, 16);
-  return join(tmpdir(), `czs-bl-${hash}.json`);
+  return tmpPath("czs-bl", filePath, ".json");
 }
 
 export function loadBaseline(filePath: string): Baseline | null {
@@ -31,12 +28,5 @@ export function loadBaseline(filePath: string): Baseline | null {
 }
 
 export function saveBaseline(filePath: string, b: Baseline): void {
-  const target = baselinePath(filePath);
-  const tmp = target + ".tmp." + process.pid;
-  try {
-    writeFileSync(tmp, JSON.stringify(b), "utf8");
-    renameSync(tmp, target);
-  } catch {
-    try { unlinkSync(tmp); } catch { /* best-effort cleanup */ }
-  }
+  atomicWriteJson(baselinePath(filePath), b);
 }
