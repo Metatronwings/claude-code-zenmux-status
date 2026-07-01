@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, basename } from "node:path";
+import { join, basename, dirname } from "node:path";
 import { homedir } from "node:os";
+import { execSync } from "node:child_process";
 import { loadBaseline, saveBaseline } from "./baseline.js";
 
 export interface SessionStats {
@@ -27,15 +28,90 @@ interface SessionMeta {
   status: string;
 }
 
-/** Find the active session for `cwd` by reading ~/.claude/sessions/<pid>.json. */
-function findActiveSession(cwd: string): string | null {
+// Same hardening as git.ts: block system config and read-only locks so the
+// status bar never executes a repo's .git/config hooks (e.g. core.fsmonitor).
+const GIT_ENV = { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_OPTIONAL_LOCKS: "0" };
+
+/**
+ * Derive the main worktree root (the repo's primary working tree) from `cwd`.
+ *
+ * Claude Code writes a session's JSONL under the project key of the cwd where
+ * the session *started*. When the session later moves into a git worktree
+ * (Claude Code's EnterWorktree), the JSONL stays put — it is NOT re-filed under
+ * the worktree's path. So a status bar running in a worktree must look up the
+ * *main* worktree root, not `cwd`.
+ *
+ * `git rev-parse --git-common-dir` gives us that: in a worktree it returns the
+ * absolute path to the main repo's `.git`; in the main worktree it returns
+ * `.git` (relative), which resolves to `cwd` itself. Stripping the trailing
+ * `.git` yields the main worktree root. Returns null outside a git repo.
+ */
+function gitMainWorktreeRoot(cwd: string): string | null {
+  try {
+    let common = execSync("git rev-parse --git-common-dir", {
+      cwd,
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 1000,
+      env: GIT_ENV,
+    }).toString().trim();
+    if (!common) return null;
+    // Main worktree returns a relative ".git" — resolve against cwd.
+    if (!common.startsWith("/")) common = join(cwd, common);
+    // common is <root>/.git. (A submodule's .git is a file — bail out there.)
+    if (basename(common) !== ".git") return null;
+    return dirname(common);
+  } catch {
+    return null;
+  }
+}
+
+function projectKeyFor(path: string): string {
+  return path.replace(/\//g, "-");
+}
+
+/**
+ * Candidate `~/.claude/projects/<key>` directories to search for session JSONL,
+ * in priority order: the current cwd first (covers the main worktree and the
+ * non-git case), then the main worktree root (covers worktrees). Deduped so the
+ * common "cwd is already the repo root" case costs nothing extra.
+ */
+function resolveProjectDirs(cwd: string, mainRoot: string | null): string[] {
+  const projectsRoot = join(homedir(), ".claude", "projects");
+  const dirs: string[] = [];
+  const seen = new Set<string>();
+  const add = (p: string) => {
+    if (!seen.has(p)) { seen.add(p); dirs.push(join(projectsRoot, projectKeyFor(p))); }
+  };
+  add(cwd);
+  if (mainRoot) add(mainRoot);
+  return dirs;
+}
+
+/**
+ * Candidate cwds for matching the `cwd` field in ~/.claude/sessions/<pid>.json.
+ * Claude Code may record either the worktree path (after EnterWorktree) or the
+ * original main-worktree cwd, so we accept a match against either.
+ */
+function resolveSessionCwds(cwd: string, mainRoot: string | null): string[] {
+  const cwds: string[] = [];
+  const seen = new Set<string>();
+  const add = (p: string) => { if (!seen.has(p)) { seen.add(p); cwds.push(p); } };
+  add(cwd);
+  if (mainRoot) add(mainRoot);
+  return cwds;
+}
+
+/** Find the active session for any of `cwds` by reading ~/.claude/sessions/<pid>.json. */
+function findActiveSession(cwds: string[]): string | null {
+  if (cwds.length === 0) return null;
+  const cwdSet = new Set(cwds);
   try {
     const sessionsDir = join(homedir(), ".claude", "sessions");
     const files = readdirSync(sessionsDir).filter(f => f.endsWith(".json"));
     for (const f of files) {
       try {
         const meta: SessionMeta = JSON.parse(readFileSync(join(sessionsDir, f), "utf8"));
-        if (meta.cwd !== cwd) continue;
+        if (!cwdSet.has(meta.cwd)) continue;
         // Verify the process is still alive
         process.kill(meta.pid, 0);
         return meta.sessionId;
@@ -47,37 +123,50 @@ function findActiveSession(cwd: string): string | null {
 
 export function getSessionStats(cwd: string): SessionStats {
   try {
-    const projectKey = cwd.replace(/\//g, "-");
-    const projectDir = join(homedir(), ".claude", "projects", projectKey);
-
-    // Prefer the active session from ~/.claude/sessions/ over mtime-based selection.
-    // This avoids reading the wrong session's JSONL when a new session starts.
-    const activeSessionId = findActiveSession(cwd);
+    // In a worktree, Claude Code still files the session JSONL under the main
+    // worktree root's project key, so search every candidate project dir.
+    const mainRoot = gitMainWorktreeRoot(cwd);
+    const projectDirs = resolveProjectDirs(cwd, mainRoot);
+    const activeSessionId = findActiveSession(resolveSessionCwds(cwd, mainRoot));
     let sessionFile: { path: string } | undefined;
 
     if (activeSessionId) {
-      const activePath = join(projectDir, `${activeSessionId}.jsonl`);
-      try {
-        statSync(activePath);
-        sessionFile = { path: activePath };
-      } catch {
-        // Active session exists but JSONL not written yet — return zeros
-        // rather than falling back to an old session's stale data.
+      // Search candidate project dirs for the active session's JSONL.
+      for (const dir of projectDirs) {
+        const activePath = join(dir, `${activeSessionId}.jsonl`);
+        try {
+          statSync(activePath);
+          sessionFile = { path: activePath };
+          break;
+        } catch { /* not in this candidate — try the next */ }
+      }
+      if (!sessionFile) {
+        // Active session exists but its JSONL isn't in any candidate dir yet —
+        // return zeros rather than falling back to a stale session's data.
         return { model: null, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, contextPct: null, durationSec: 0 };
       }
     }
 
     if (!sessionFile) {
-      sessionFile = readdirSync(projectDir)
-        .filter(f => f.endsWith(".jsonl"))
-        .flatMap(f => {
+      // Fallback: pick the most recently modified .jsonl across candidate dirs.
+      let best: { path: string; mtime: number } | undefined;
+      for (const dir of projectDirs) {
+        let files: string[];
+        try {
+          files = readdirSync(dir);
+        } catch {
+          continue; // candidate project dir doesn't exist
+        }
+        for (const f of files) {
+          if (!f.endsWith(".jsonl")) continue;
           try {
-            return [{ path: join(projectDir, f), mtime: statSync(join(projectDir, f)).mtimeMs }];
-          } catch {
-            return []; // file disappeared between readdir and stat
-          }
-        })
-        .sort((a, b) => b.mtime - a.mtime)[0];
+            const p = join(dir, f);
+            const mtime = statSync(p).mtimeMs;
+            if (!best || mtime > best.mtime) best = { path: p, mtime };
+          } catch { /* file disappeared between readdir and stat */ }
+        }
+      }
+      if (best) sessionFile = { path: best.path };
     }
 
     if (!sessionFile) return { model: null, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, contextPct: null, durationSec: 0 };

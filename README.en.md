@@ -152,6 +152,10 @@ The Claude Code status bar refreshes after every AI response, which can mean mul
 - Cache file: `/tmp/czs-<key_hash>.cache` (first 16 chars of the key's SHA-256, no plaintext)
 - Git status, current directory, and session token counts are always read fresh — never cached
 
+## Git worktree support
+
+When running inside a git worktree (e.g. Claude Code's EnterWorktree), Claude Code still files the session JSONL under the main worktree root's `~/.claude/projects/<key>/` directory — it does not move with the cwd to the worktree path. The status bar derives the main worktree root via `git rev-parse --git-common-dir` and falls back to it, so the model name, session tokens, and context percentage all display correctly inside a worktree, identical to the main worktree.
+
 ## Time calculation
 
 All countdowns use the `Date` header from the API response as the current time reference, not the local system clock. This ensures correct display across any timezone or clock skew environment.

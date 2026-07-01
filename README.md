@@ -153,6 +153,10 @@ Claude Code 状态栏在每次 AI 回复后触发刷新，频繁对话时每分�
 - 缓存文件：`/tmp/czs-<key_hash>.cache`（key 的 sha256 前 16 位，不含明文）
 - Git 状态、当前目录、会话 token 每次实时读取，不走缓存
 
+## Git Worktree 支持
+
+在 git worktree 中运行时（如 Claude Code 的 EnterWorktree），会话 JSONL 仍由 Claude Code 写在主工作树根对应的 `~/.claude/projects/<key>/` 目录下，不会随 cwd 切到 worktree 路径。状态栏会通过 `git rev-parse --git-common-dir` 自动回溯到主工作树根，因此在 worktree 中模型名、会话 token、上下文百分比均能正确显示，与主工作树一致。
+
 ## 时间计算
 
 所有倒计时以 API 响应的 `Date` 头作为当前时间基准，不依赖本地系统时钟，在任何时区和时钟偏差环境下均能正确显示。

@@ -10,7 +10,7 @@ fi
 TTL="${ZENMUX_CACHE_TTL:-60}"
 USE_BAR="${ZENMUX_PROGRESS_BAR:-0}"
 COMPACT=0
-[[ "$ZENMUX_COMPACT" == "1" || "$(tput cols 2>/dev/null || echo 0)" -lt 120 && "$(tput cols 2>/dev/null || echo 0)" -gt 0 ]] && COMPACT=1
+[[ "${ZENMUX_COMPACT:-0}" == "1" || "$(tput cols 2>/dev/null || echo 0)" -lt 120 && "$(tput cols 2>/dev/null || echo 0)" -gt 0 ]] && COMPACT=1
 API_URL="https://zenmux.ai/api/v1/management/subscription/detail"
 
 # Cache key: sha256 of API key + mode, first 16 hex chars
@@ -103,7 +103,8 @@ fmt_duration() {
 }
 
 format_model_name() {
-  local raw=$1 name=${raw##*/}
+  local raw=$1
+  local name=${raw##*/}
   name=${name#claude-}
   if [[ "$name" =~ ^([a-zA-Z]+)[-.]([0-9]+)[-.]([0-9]+) ]]; then
     local family=${BASH_REMATCH[1]} major=${BASH_REMATCH[2]} minor=${BASH_REMATCH[3]}
@@ -113,10 +114,29 @@ format_model_name() {
   fi
 }
 
+# Resolve the ~/.claude/projects/<key> dir holding this session's JSONL.
+# In a git worktree, Claude Code still writes the JSONL under the *main
+# worktree root*'s project key — not the worktree's path — so fall back from
+# $PWD's key to the main worktree root's key (via git rev-parse --git-common-dir).
+_resolve_session_dir() {
+  local dir="${HOME}/.claude/projects/${PWD//\//-}"
+  if [[ -d "$dir" ]]; then echo "$dir"; return 0; fi
+  local common
+  common=$(git rev-parse --git-common-dir 2>/dev/null) || return 1
+  case "$common" in
+    /*) ;;
+    *) common="$PWD/$common" ;;
+  esac
+  [[ "$common" == */.git ]] || return 1
+  local root="${common%/.git}"
+  dir="${HOME}/.claude/projects/${root//\//-}"
+  if [[ -d "$dir" ]]; then echo "$dir"; return 0; fi
+  return 1
+}
+
 get_model_name() {
-  local project_key="${PWD//\//-}"
-  local session_dir="${HOME}/.claude/projects/${project_key}"
-  [[ -d "$session_dir" ]] || return
+  local session_dir
+  session_dir=$(_resolve_session_dir) || return
   local latest
   latest=$(ls -t "$session_dir"/*.jsonl 2>/dev/null | head -1)
   [[ -n "$latest" ]] || return
@@ -140,9 +160,8 @@ get_model_name() {
 }
 
 get_token_stats() {
-  local project_key="${PWD//\//-}"
-  local session_dir="${HOME}/.claude/projects/${project_key}"
-  [[ -d "$session_dir" ]] || return
+  local session_dir
+  session_dir=$(_resolve_session_dir) || return
   local latest
   latest=$(ls -t "$session_dir"/*.jsonl 2>/dev/null | head -1)
   [[ -n "$latest" ]] || return
