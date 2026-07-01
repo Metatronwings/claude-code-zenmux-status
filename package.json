@@ -1,6 +1,6 @@
 {
   "name": "@metatronwings/claude-code-zenmux-status",
-  "version": "0.8.8",
+  "version": "0.8.9",
   "description": "Zenmux usage monitor for Claude Code status bar",
   "author": "Metatronwings",
   "license": "MIT",

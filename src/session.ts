@@ -121,52 +121,69 @@ function findActiveSession(cwds: string[]): string | null {
   return null;
 }
 
-export function getSessionStats(cwd: string): SessionStats {
+export function getSessionStats(
+  cwd: string,
+  hint?: { transcriptPath?: string; sessionId?: string }
+): SessionStats {
   try {
-    // In a worktree, Claude Code still files the session JSONL under the main
-    // worktree root's project key, so search every candidate project dir.
-    const mainRoot = gitMainWorktreeRoot(cwd);
-    const projectDirs = resolveProjectDirs(cwd, mainRoot);
-    const activeSessionId = findActiveSession(resolveSessionCwds(cwd, mainRoot));
     let sessionFile: { path: string } | undefined;
 
-    if (activeSessionId) {
-      // Search candidate project dirs for the active session's JSONL.
-      for (const dir of projectDirs) {
-        const activePath = join(dir, `${activeSessionId}.jsonl`);
-        try {
-          statSync(activePath);
-          sessionFile = { path: activePath };
-          break;
-        } catch { /* not in this candidate — try the next */ }
-      }
-      if (!sessionFile) {
-        // Active session exists but its JSONL isn't in any candidate dir yet —
-        // return zeros rather than falling back to a stale session's data.
-        return { model: null, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, contextPct: null, durationSec: 0 };
-      }
+    // Claude Code's statusLine stdin hands us the current session's transcript
+    // path directly. Trust it over any cwd/worktree inference — it always points
+    // at the *current* session, fixing "shows the wrong model" when the status bar
+    // runs in a subdirectory or worktree whose cwd doesn't match the session cwd.
+    if (hint?.transcriptPath) {
+      try {
+        statSync(hint.transcriptPath);
+        sessionFile = { path: hint.transcriptPath };
+      } catch { /* stale/unreadable — fall through to inference */ }
     }
 
     if (!sessionFile) {
-      // Fallback: pick the most recently modified .jsonl across candidate dirs.
-      let best: { path: string; mtime: number } | undefined;
-      for (const dir of projectDirs) {
-        let files: string[];
-        try {
-          files = readdirSync(dir);
-        } catch {
-          continue; // candidate project dir doesn't exist
-        }
-        for (const f of files) {
-          if (!f.endsWith(".jsonl")) continue;
+      // In a worktree, Claude Code still files the session JSONL under the main
+      // worktree root's project key, so search every candidate project dir.
+      const mainRoot = gitMainWorktreeRoot(cwd);
+      const projectDirs = resolveProjectDirs(cwd, mainRoot);
+      const activeSessionId = hint?.sessionId ?? findActiveSession(resolveSessionCwds(cwd, mainRoot));
+
+      if (activeSessionId) {
+        // Search candidate project dirs for the active session's JSONL.
+        for (const dir of projectDirs) {
+          const activePath = join(dir, `${activeSessionId}.jsonl`);
           try {
-            const p = join(dir, f);
-            const mtime = statSync(p).mtimeMs;
-            if (!best || mtime > best.mtime) best = { path: p, mtime };
-          } catch { /* file disappeared between readdir and stat */ }
+            statSync(activePath);
+            sessionFile = { path: activePath };
+            break;
+          } catch { /* not in this candidate — try the next */ }
+        }
+        if (!sessionFile) {
+          // Active session exists but its JSONL isn't in any candidate dir yet —
+          // return zeros rather than falling back to a stale session's data.
+          return { model: null, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, contextPct: null, durationSec: 0 };
         }
       }
-      if (best) sessionFile = { path: best.path };
+
+      if (!sessionFile) {
+        // Fallback: pick the most recently modified .jsonl across candidate dirs.
+        let best: { path: string; mtime: number } | undefined;
+        for (const dir of projectDirs) {
+          let files: string[];
+          try {
+            files = readdirSync(dir);
+          } catch {
+            continue; // candidate project dir doesn't exist
+          }
+          for (const f of files) {
+            if (!f.endsWith(".jsonl")) continue;
+            try {
+              const p = join(dir, f);
+              const mtime = statSync(p).mtimeMs;
+              if (!best || mtime > best.mtime) best = { path: p, mtime };
+            } catch { /* file disappeared between readdir and stat */ }
+          }
+        }
+        if (best) sessionFile = { path: best.path };
+      }
     }
 
     if (!sessionFile) return { model: null, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, contextPct: null, durationSec: 0 };

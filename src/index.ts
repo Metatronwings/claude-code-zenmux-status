@@ -5,6 +5,29 @@ import { readCache, writeCache, tryAcquireLock, releaseLock, waitForCache } from
 import { getSessionStats, formatModelName } from "./session.js";
 import { buildGitLine } from "./git.js";
 import { safeNum, pctColor } from "./utils.js";
+import { readFileSync } from "node:fs";
+
+/**
+ * Read the JSON Claude Code pipes to the statusLine command via stdin.
+ * Contains `transcript_path` (absolute path to the *current* session's JSONL),
+ * `session_id`, and `cwd` — letting us locate the session without cwd inference.
+ * Returns null when run manually (no stdin / TTY), so inference falls back.
+ */
+function readCcStatusInput(): { transcriptPath?: string; sessionId?: string; cwd?: string } | null {
+  try {
+    if (process.stdin.isTTY) return null;
+    const raw = readFileSync(0, "utf8");
+    if (!raw.trim()) return null;
+    const j = JSON.parse(raw) as Record<string, unknown>;
+    return {
+      transcriptPath: typeof j.transcript_path === "string" ? j.transcript_path : undefined,
+      sessionId: typeof j.session_id === "string" ? j.session_id : undefined,
+      cwd: typeof j.cwd === "string" ? j.cwd : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
 
 function fmtK(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -29,8 +52,9 @@ const apiTimeoutMs = safeNum(process.env.ZENMUX_API_TIMEOUT, 5) * 1000;
 const displayMode: DisplayMode = compact ? "compact" : useBar ? "bar" : "full";
 
 // Session stats and git line are always fresh — never cached
-const cwd = process.cwd();
-const session = getSessionStats(cwd);
+const ccInput = readCcStatusInput();
+const cwd = ccInput?.cwd || process.cwd();
+const session = getSessionStats(cwd, ccInput ? { transcriptPath: ccInput.transcriptPath, sessionId: ccInput.sessionId } : undefined);
 let modelPrefix = "";
 if (session?.model) {
   let ctx = "";

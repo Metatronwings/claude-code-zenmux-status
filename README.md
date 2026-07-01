@@ -155,7 +155,9 @@ Claude Code 状态栏在每次 AI 回复后触发刷新，频繁对话时每分�
 
 ## Git Worktree 支持
 
-在 git worktree 中运行时（如 Claude Code 的 EnterWorktree），会话 JSONL 仍由 Claude Code 写在主工作树根对应的 `~/.claude/projects/<key>/` 目录下，不会随 cwd 切到 worktree 路径。状态栏会通过 `git rev-parse --git-common-dir` 自动回溯到主工作树根，因此在 worktree 中模型名、会话 token、上下文百分比均能正确显示，与主工作树一致。
+Claude Code 的状态栏协议会通过 stdin 向状态栏命令传入当前会话的 `transcript_path`（当前会话 JSONL 的绝对路径）。工具优先用该路径定位会话，因此无论状态栏运行在哪个 cwd（子目录、git worktree），模型名、会话 token、上下文百分比都能正确显示，始终对应当前会话。
+
+当 stdin 不可用时（如手动运行脚本调试），回退到 cwd 推断：通过 `git rev-parse --git-common-dir` 回溯主工作树根，在候选 projectDir 中查找会话 JSONL。
 
 ## 时间计算
 

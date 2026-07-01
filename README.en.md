@@ -154,7 +154,9 @@ The Claude Code status bar refreshes after every AI response, which can mean mul
 
 ## Git worktree support
 
-When running inside a git worktree (e.g. Claude Code's EnterWorktree), Claude Code still files the session JSONL under the main worktree root's `~/.claude/projects/<key>/` directory — it does not move with the cwd to the worktree path. The status bar derives the main worktree root via `git rev-parse --git-common-dir` and falls back to it, so the model name, session tokens, and context percentage all display correctly inside a worktree, identical to the main worktree.
+Claude Code's status bar protocol pipes the current session's `transcript_path` (the absolute path to the current session's JSONL) to the status line command via stdin. The tool prefers this path to locate the session, so no matter which cwd the status bar runs in (subdirectory, git worktree), the model name, session tokens, and context percentage always reflect the current session.
+
+When stdin is unavailable (e.g. running the script manually for debugging), it falls back to cwd inference: it derives the main worktree root via `git rev-parse --git-common-dir` and searches the candidate project dirs for the session JSONL.
 
 ## Time calculation
 

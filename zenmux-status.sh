@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Read the JSON Claude Code pipes to the statusLine via stdin (transcript_path,
+# session_id, cwd). Empty when run manually (no stdin / TTY).
+_CC_STDIN=""
+if [[ ! -t 0 ]]; then
+  _CC_STDIN="$(cat 2>/dev/null || true)"
+  if [[ -n "$_CC_STDIN" ]]; then
+    TRANSCRIPT_PATH="$(printf '%s' "$_CC_STDIN" | jq -r '.transcript_path // empty' 2>/dev/null || true)"
+    CC_CWD="$(printf '%s' "$_CC_STDIN" | jq -r '.cwd // empty' 2>/dev/null || true)"
+    [[ -n "$CC_CWD" && -d "$CC_CWD" ]] && cd "$CC_CWD"
+  fi
+fi
+TRANSCRIPT_PATH="${TRANSCRIPT_PATH:-}"
+
 API_KEY="${ZENMUX_MANAGEMENT_API_KEY:-}"
 if [[ -z "$API_KEY" ]]; then
   echo "ZENMUX_MANAGEMENT_API_KEY must be set" >&2
@@ -135,10 +148,16 @@ _resolve_session_dir() {
 }
 
 get_model_name() {
-  local session_dir
-  session_dir=$(_resolve_session_dir) || return
-  local latest
-  latest=$(ls -t "$session_dir"/*.jsonl 2>/dev/null | head -1)
+  local latest=""
+  # CC's stdin transcript_path always points at the current session's JSONL —
+  # prefer it over cwd inference (fixes wrong model in subdirs/worktrees).
+  if [[ -n "$TRANSCRIPT_PATH" && -f "$TRANSCRIPT_PATH" ]]; then
+    latest="$TRANSCRIPT_PATH"
+  else
+    local session_dir
+    session_dir=$(_resolve_session_dir) || return
+    latest=$(ls -t "$session_dir"/*.jsonl 2>/dev/null | head -1)
+  fi
   [[ -n "$latest" ]] || return
   local model
   model=$(jq -r 'select(.type == "assistant" and .message.model != null) | .message.model' "$latest" 2>/dev/null | tail -1)
@@ -160,10 +179,14 @@ get_model_name() {
 }
 
 get_token_stats() {
-  local session_dir
-  session_dir=$(_resolve_session_dir) || return
-  local latest
-  latest=$(ls -t "$session_dir"/*.jsonl 2>/dev/null | head -1)
+  local latest=""
+  if [[ -n "$TRANSCRIPT_PATH" && -f "$TRANSCRIPT_PATH" ]]; then
+    latest="$TRANSCRIPT_PATH"
+  else
+    local session_dir
+    session_dir=$(_resolve_session_dir) || return
+    latest=$(ls -t "$session_dir"/*.jsonl 2>/dev/null | head -1)
+  fi
   [[ -n "$latest" ]] || return
 
   local total_lines
