@@ -144,6 +144,7 @@ npm install
 | `ZENMUX_CACHE_TTL` | 否 | 缓存秒数，默认 `60` |
 | `ZENMUX_COMPACT` | 否 | 设为 `1` 启用紧凑模式（去掉进度条，窄终端友好） |
 | `ZENMUX_API_TIMEOUT` | 否 | API 请求超时秒数，默认 `5` |
+| `ZENMUX_API_DOMAIN` | 否 | 替换默认的 `zenmux.ai` 域名（如自建镜像），例如 `api.example.com` |
 
 ## 缓存
 

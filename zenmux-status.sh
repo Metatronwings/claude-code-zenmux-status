@@ -24,7 +24,12 @@ TTL="${ZENMUX_CACHE_TTL:-60}"
 USE_BAR="${ZENMUX_PROGRESS_BAR:-0}"
 COMPACT=0
 [[ "${ZENMUX_COMPACT:-0}" == "1" || "$(tput cols 2>/dev/null || echo 0)" -lt 120 && "$(tput cols 2>/dev/null || echo 0)" -gt 0 ]] && COMPACT=1
-API_URL="https://zenmux.ai/api/v1/management/subscription/detail"
+# Optional ZENMUX_API_DOMAIN replaces the default zenmux.ai domain
+API_DOMAIN="${ZENMUX_API_DOMAIN:-zenmux.ai}"
+API_DOMAIN="${API_DOMAIN#http://}"
+API_DOMAIN="${API_DOMAIN#https://}"
+API_DOMAIN="${API_DOMAIN%/}"
+API_URL="https://${API_DOMAIN}/api/v1/management/subscription/detail"
 
 # Cache key: sha256 of API key + mode, first 16 hex chars
 CACHE_SUFFIX=""

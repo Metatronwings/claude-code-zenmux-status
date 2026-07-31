@@ -143,6 +143,7 @@ Add to your `.claude/settings.local.json`:
 | `ZENMUX_HIDE_7D_BELOW_70` | No | Set to `1` to hide the 7d window when usage is below 70% |
 | `ZENMUX_CACHE_TTL` | No | Cache TTL in seconds, default `60` |
 | `ZENMUX_COMPACT` | No | Set to `1` for compact mode (no progress bars, narrower) |
+| `ZENMUX_API_DOMAIN` | No | Replace the default `zenmux.ai` domain (e.g. a self-hosted mirror), e.g. `api.example.com` |
 
 ## Caching
 

@@ -1,4 +1,14 @@
-const API_URL = "https://zenmux.ai/api/v1/management/subscription/detail";
+/**
+ * `ZENMUX_API_DOMAIN` (optional) replaces the default `zenmux.ai` domain,
+ * e.g. `api.example.com`. A scheme prefix (`https://`) and trailing
+ * slashes are stripped.
+ */
+const apiDomain = (process.env.ZENMUX_API_DOMAIN ?? "zenmux.ai")
+  .trim()
+  .replace(/^https?:\/\//, "")
+  .replace(/\/+$/, "");
+
+const API_URL = `https://${apiDomain}/api/v1/management/subscription/detail`;
 
 export interface QuotaWindow {
   usage_percentage: number;   // 0–1
