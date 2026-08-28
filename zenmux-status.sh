@@ -5,7 +5,12 @@ set -euo pipefail
 # session_id, cwd). Empty when run manually (no stdin / TTY).
 _CC_STDIN=""
 if [[ ! -t 0 ]]; then
-  _CC_STDIN="$(cat 2>/dev/null || true)"
+  # Bound the read: an stdin that never EOFs would wedge the status bar forever.
+  if command -v timeout >/dev/null 2>&1; then
+    _CC_STDIN="$(timeout 1 cat 2>/dev/null || true)"
+  else
+    _CC_STDIN="$(cat 2>/dev/null || true)"
+  fi
   if [[ -n "$_CC_STDIN" ]]; then
     TRANSCRIPT_PATH="$(printf '%s' "$_CC_STDIN" | jq -r '.transcript_path // empty' 2>/dev/null || true)"
     CC_CWD="$(printf '%s' "$_CC_STDIN" | jq -r '.cwd // empty' 2>/dev/null || true)"
@@ -21,6 +26,7 @@ if [[ -z "$API_KEY" ]]; then
 fi
 
 TTL="${ZENMUX_CACHE_TTL:-60}"
+API_TIMEOUT="${ZENMUX_API_TIMEOUT:-5}"
 USE_BAR="${ZENMUX_PROGRESS_BAR:-0}"
 COMPACT=0
 [[ "${ZENMUX_COMPACT:-0}" == "1" || "$(tput cols 2>/dev/null || echo 0)" -lt 120 && "$(tput cols 2>/dev/null || echo 0)" -gt 0 ]] && COMPACT=1
@@ -52,7 +58,28 @@ _atomic_write() {
   mv "$tmp" "$target"
 }
 
-_try_lock() { mkdir "$LOCK_DIR" 2>/dev/null && return 0 || return 1; }
+# Locks older than this are treated as stale (holder was killed mid-fetch,
+# e.g. by the statusline timeout while curl hung) and reclaimed.
+STALE_LOCK_SEC=10
+
+_mtime_of() {
+  stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0
+}
+
+_try_lock() {
+  mkdir "$LOCK_DIR" 2>/dev/null && return 0
+  # Lock exists. If it's stale, reclaim it: `mv` is atomic, so exactly one
+  # process can move the dir away; losers get ENOENT and fall through.
+  local age=$(( $(date +%s) - $(_mtime_of "$LOCK_DIR") ))
+  if [[ "$age" -gt "$STALE_LOCK_SEC" ]]; then
+    local reaped="${LOCK_DIR}.reap.$$"
+    if mv "$LOCK_DIR" "$reaped" 2>/dev/null; then
+      rmdir "$reaped" 2>/dev/null || true
+      mkdir "$LOCK_DIR" 2>/dev/null && return 0
+    fi
+  fi
+  return 1
+}
 _unlock()   { rmdir "$LOCK_DIR" 2>/dev/null || true; }
 
 color_pct() {
@@ -207,8 +234,8 @@ get_token_stats() {
       [[ -f "$key" ]] || stale_list="${stale_list}[\"$key\"],"
     done < <(jq -r 'keys[]' "$BASELINE_FILE" 2>/dev/null)
     if [[ -n "$stale_list" ]]; then
-      jq "del(${stale_list%,})" "$BASELINE_FILE" > "${BASELINE_FILE}.tmp" 2>/dev/null && \
-        mv "${BASELINE_FILE}.tmp" "$BASELINE_FILE"
+      jq "del(${stale_list%,})" "$BASELINE_FILE" > "${BASELINE_FILE}.tmp.$$" 2>/dev/null && \
+        mv "${BASELINE_FILE}.tmp.$$" "$BASELINE_FILE"
     fi
   fi
 
@@ -281,8 +308,8 @@ get_token_stats() {
     --argjson startedAt "$started_at" \
     --argjson lineCount "$total_lines" \
     '.[$path] += {input: $input, cacheRead: $cacheRead, output: $output, sessionInput: $sessionInput, sessionCacheRead: $sessionCacheRead, sessionOutput: $sessionOutput, startedAt: $startedAt, lineCount: $lineCount}' \
-    "$BASELINE_FILE" > "${BASELINE_FILE}.tmp" 2>/dev/null && \
-    mv "${BASELINE_FILE}.tmp" "$BASELINE_FILE"
+    "$BASELINE_FILE" > "${BASELINE_FILE}.tmp.$$" 2>/dev/null && \
+    mv "${BASELINE_FILE}.tmp.$$" "$BASELINE_FILE"
 
   local delta_input=$((cur_input - sess_input))
   local delta_cache=$((cur_cache - sess_cache))
@@ -308,11 +335,11 @@ _fetch_and_format() {
   TMP_BODY=$(mktemp)
   trap 'rm -f "$TMP_HEADERS" "$TMP_BODY"' RETURN
 
-  HTTP_CODE=$(curl -sS -D "$TMP_HEADERS" -o "$TMP_BODY" -w "%{http_code}" \
+  HTTP_CODE=$(curl -sS --max-time "$API_TIMEOUT" -D "$TMP_HEADERS" -o "$TMP_BODY" -w "%{http_code}" \
     -H "Authorization: Bearer ${API_KEY}" "$API_URL")
 
   if [[ "$HTTP_CODE" != "200" ]]; then
-    echo "⚡ ERR: HTTP ${HTTP_CODE}"
+    LINE="⚡ ERR: HTTP ${HTTP_CODE}"
     return 1
   fi
 
@@ -321,7 +348,7 @@ _fetch_and_format() {
   SUCCESS=$(echo "$BODY" | jq -r '.success')
   if [[ "$SUCCESS" != "true" ]]; then
     MSG=$(echo "$BODY" | jq -r '.message // "API returned no data"')
-    echo "⚡ ERR: ${MSG}"
+    LINE="⚡ ERR: ${MSG}"
     return 1
   fi
 
@@ -362,17 +389,12 @@ _fetch_and_format() {
   R7=$(fmt_reset "$RESET7D")
 
   if [[ "$USE_BAR" == "1" ]]; then
-    MODEL_PREFIX=""
-    if [[ -z "${ZENMUX_NO_MODEL:-}" ]]; then
-      MODEL_PREFIX=$(get_model_name)
-      [[ -n "$MODEL_PREFIX" ]] && MODEL_PREFIX="${MODEL_PREFIX} "
-    fi
     if [[ "$COMPACT" == "1" ]]; then
-      LINE="${MODEL_PREFIX}${EMO} 5h:${C5H}$(fmt_pct "$PCT5H")\x1b[0m ${R5} | 7d:${C7D}$(fmt_pct "$PCT7D")\x1b[0m ${R7}"
+      LINE="${EMO} 5h:${C5H}$(fmt_pct "$PCT5H")\x1b[0m ${R5} | 7d:${C7D}$(fmt_pct "$PCT7D")\x1b[0m ${R7}"
     else
       BAR5="${C5H}$(render_bar "$PCT5H")\x1b[0m"
       BAR7="${C7D}$(render_bar "$PCT7D")\x1b[0m"
-      LINE="${MODEL_PREFIX}${EMO} ${BAR5} $(fmt_pct "$PCT5H") ${R5} | 7d ${BAR7} $(fmt_pct "$PCT7D") ${R7}"
+      LINE="${EMO} ${BAR5} $(fmt_pct "$PCT5H") ${R5} | 7d ${BAR7} $(fmt_pct "$PCT7D") ${R7}"
     fi
     [[ -n "$BAD" ]] && LINE="${BAD# } | ${LINE}"
   else
@@ -393,19 +415,22 @@ SHORT_CWD="${PWD/#$HOME/~}"
 GIT_LINE="📁${SHORT_CWD}"
 [[ -n "$BRANCH" && "$BRANCH" != "HEAD" ]] && GIT_LINE+=" | 🌿(${BRANCH})${DIRTY}"
 
-TOKEN_STATS=$(get_token_stats)
+# Model prefix is session info, not quota data — computed fresh every run and
+# never baked into the cache (a cached model name would go stale).
+MODEL_PREFIX=""
+if [[ -z "${ZENMUX_NO_MODEL:-}" ]]; then
+  MODEL_PREFIX=$(get_model_name || true)
+  [[ -n "$MODEL_PREFIX" ]] && MODEL_PREFIX="${MODEL_PREFIX} "
+fi
+
+TOKEN_STATS=$(get_token_stats || true)
+LINE=""
 
 # 1. Cache hit → output and exit
 if [[ -f "$CACHE_FILE" ]]; then
-  mtime=0
-  if stat -c %Y "$CACHE_FILE" &>/dev/null; then
-    mtime=$(stat -c %Y "$CACHE_FILE")
-  else
-    mtime=$(stat -f %m "$CACHE_FILE")
-  fi
-  age=$(($(date +%s) - mtime))
+  age=$(($(date +%s) - $(_mtime_of "$CACHE_FILE")))
   if [[ "$age" -lt "$TTL" ]]; then
-    echo -e "$(cat "$CACHE_FILE")${TOKEN_STATS}\n${GIT_LINE}"
+    echo -e "${MODEL_PREFIX}$(cat "$CACHE_FILE")${TOKEN_STATS}\n${GIT_LINE}"
     exit 0
   fi
 fi
@@ -414,25 +439,35 @@ fi
 if _try_lock; then
   if _fetch_and_format; then
     _atomic_write "$CACHE_FILE" "$LINE"
-    echo -e "${LINE}${TOKEN_STATS}\n${GIT_LINE}"
   fi
+  # On failure LINE holds the "⚡ ERR: …" message; still append session/git
+  # info so the bar doesn't collapse to a bare error line.
+  echo -e "${MODEL_PREFIX}${LINE}${TOKEN_STATS}\n${GIT_LINE}"
   _unlock
   exit 0
 fi
 
-# 3. Lock held by another process → wait up to 5s for cache
+# 3. Lock held by another process → wait up to 5s for it to REFRESH the cache.
+# Only accept a snapshot written after we started waiting (mtime advanced and
+# within TTL) — never replay an already-expired cache.
+WAIT_SNAPSHOT=0
+[[ -f "$CACHE_FILE" ]] && WAIT_SNAPSHOT=$(_mtime_of "$CACHE_FILE")
 WAIT_DEADLINE=$(($(date +%s) + 5))
 while [[ $(date +%s) -lt $WAIT_DEADLINE ]]; do
   sleep 0.2
   if [[ -f "$CACHE_FILE" ]]; then
-    echo -e "$(cat "$CACHE_FILE")${TOKEN_STATS}\n${GIT_LINE}"
-    exit 0
+    WAIT_MTIME=$(_mtime_of "$CACHE_FILE")
+    WAIT_AGE=$(($(date +%s) - WAIT_MTIME))
+    if [[ "$WAIT_MTIME" -gt "$WAIT_SNAPSHOT" && "$WAIT_AGE" -lt "$TTL" ]]; then
+      echo -e "${MODEL_PREFIX}$(cat "$CACHE_FILE")${TOKEN_STATS}\n${GIT_LINE}"
+      exit 0
+    fi
   fi
 done
 
 # 4. Timeout → fall back to direct fetch (no lock)
 if _fetch_and_format; then
   _atomic_write "$CACHE_FILE" "$LINE"
-  echo -e "${LINE}${TOKEN_STATS}\n${GIT_LINE}"
 fi
+echo -e "${MODEL_PREFIX}${LINE}${TOKEN_STATS}\n${GIT_LINE}"
 exit 0
